@@ -20,6 +20,18 @@ builder.Services.AddOpenApi();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured. Set it in User Secrets.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("JWT key is not configured. Set 'Jwt:Key' in User Secrets.");
+}
+
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key));
 
 builder.Services
@@ -42,7 +54,7 @@ builder.Services
 builder.Services.AddAuthorization();
 
 builder.Services.AddDbContext<UserServiceDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(connectionString));
 
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();

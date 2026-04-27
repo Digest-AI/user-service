@@ -27,15 +27,13 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
         var user = new User
         {
             Id = Guid.NewGuid(),
+            PublicId = Guid.NewGuid(),
             Email = normalizedEmail,
             Username = normalizedUsername,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
-            Phone = request.Phone?.Trim(),
-            TelegramChatId = request.TelegramChatId,
             IsActive = true,
-            IsVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -48,21 +46,6 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             RoleId = defaultRole.Id,
             IsDeleted = false
         });
-
-        user.Preferences = new Preference
-        {
-            Id = Guid.NewGuid(),
-            UserId = user.Id
-        };
-
-        user.NotificationSettings = new NotificationSettings
-        {
-            Id = Guid.NewGuid(),
-            UserId = user.Id,
-            EmailEnabled = true,
-            TelegramEnabled = true,
-            PushEnabled = true
-        };
 
         await dbContext.Users.AddAsync(user, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -221,14 +204,12 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             .Select(x => new AuthUserDto
             {
                 Id = x.Id,
+                PublicId = x.PublicId,
                 Email = x.Email,
                 Username = x.Username,
                 FirstName = x.FirstName,
                 LastName = x.LastName,
-                Phone = x.Phone,
-                TelegramChatId = x.TelegramChatId,
                 IsActive = x.IsActive,
-                IsVerified = x.IsVerified,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt,
                 LastLoginAt = x.LastLoginAt,

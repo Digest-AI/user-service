@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using user_service.Data;
 
@@ -11,9 +12,11 @@ using user_service.Data;
 namespace user_service.Migrations
 {
     [DbContext(typeof(UserServiceDbContext))]
-    partial class UserServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260426203421_SoftDeleteSupport")]
+    partial class SoftDeleteSupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,6 +24,82 @@ namespace user_service.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("user_service.Models.NotificationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("EmailEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("PushEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<TimeSpan?>("QuietHoursEnd")
+                        .HasColumnType("time");
+
+                    b.Property<TimeSpan?>("QuietHoursStart")
+                        .HasColumnType("time");
+
+                    b.Property<bool>("TelegramEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("NotificationSettings");
+                });
+
+            modelBuilder.Entity("user_service.Models.Preference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FavoriteArtists")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FavoriteCategories")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("MaxPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("MinPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("NotificationBeforeHours")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PreferredCities")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PreferredEventTime")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("Preferences");
+                });
 
             modelBuilder.Entity("user_service.Models.RefreshToken", b =>
                 {
@@ -134,6 +213,9 @@ namespace user_service.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
@@ -147,11 +229,15 @@ namespace user_service.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
-                    b.Property<Guid>("PublicId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("Phone")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<DateTime?>("RefreshTokensRevokedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<long?>("TelegramChatId")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -166,13 +252,39 @@ namespace user_service.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
                     b.HasIndex("Username")
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("user_service.Models.UserAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ActionType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserActions");
                 });
 
             modelBuilder.Entity("user_service.Models.UserRole", b =>
@@ -196,10 +308,43 @@ namespace user_service.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("user_service.Models.NotificationSettings", b =>
+                {
+                    b.HasOne("user_service.Models.User", "User")
+                        .WithOne("NotificationSettings")
+                        .HasForeignKey("user_service.Models.NotificationSettings", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("user_service.Models.Preference", b =>
+                {
+                    b.HasOne("user_service.Models.User", "User")
+                        .WithOne("Preferences")
+                        .HasForeignKey("user_service.Models.Preference", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("user_service.Models.RefreshToken", b =>
                 {
                     b.HasOne("user_service.Models.User", "User")
                         .WithMany("RefreshTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("user_service.Models.UserAction", b =>
+                {
+                    b.HasOne("user_service.Models.User", "User")
+                        .WithMany("UserActions")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -233,7 +378,13 @@ namespace user_service.Migrations
 
             modelBuilder.Entity("user_service.Models.User", b =>
                 {
+                    b.Navigation("NotificationSettings");
+
+                    b.Navigation("Preferences");
+
                     b.Navigation("RefreshTokens");
+
+                    b.Navigation("UserActions");
 
                     b.Navigation("UserRoles");
                 });
