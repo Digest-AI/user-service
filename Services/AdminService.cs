@@ -1,5 +1,4 @@
 using user_service.DTOs.Admin;
-using user_service.DTOs.User;
 using user_service.Interfaces;
 using user_service.Models;
 
@@ -30,8 +29,6 @@ public sealed class AdminService(IUserRepository userRepository) : IAdminService
         if (!string.IsNullOrWhiteSpace(request.Username)) user.Username = request.Username.Trim();
         if (!string.IsNullOrWhiteSpace(request.FirstName)) user.FirstName = request.FirstName.Trim();
         if (!string.IsNullOrWhiteSpace(request.LastName)) user.LastName = request.LastName.Trim();
-        user.Phone = request.Phone?.Trim() ?? user.Phone;
-        if (request.IsVerified.HasValue) user.IsVerified = request.IsVerified.Value;
         user.UpdatedAt = DateTime.UtcNow;
 
         await userRepository.SaveChangesAsync(cancellationToken);
@@ -74,11 +71,6 @@ public sealed class AdminService(IUserRepository userRepository) : IAdminService
         }
 
         user.IsActive = request.IsActive;
-        if (request.IsVerified.HasValue)
-        {
-            user.IsVerified = request.IsVerified.Value;
-        }
-
         user.UpdatedAt = DateTime.UtcNow;
         if (!user.IsActive)
         {
@@ -183,183 +175,17 @@ public sealed class AdminService(IUserRepository userRepository) : IAdminService
         return true;
     }
 
-    public async Task<NotificationSettingsDto?> GetUserNotificationsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var settings = await userRepository.GetNotificationSettingsAsync(userId, cancellationToken);
-        if (settings is null)
-        {
-            return null;
-        }
-
-        return new NotificationSettingsDto
-        {
-            EmailEnabled = settings.EmailEnabled,
-            TelegramEnabled = settings.TelegramEnabled,
-            PushEnabled = settings.PushEnabled,
-            QuietHoursStart = settings.QuietHoursStart,
-            QuietHoursEnd = settings.QuietHoursEnd
-        };
-    }
-
-    public async Task<NotificationSettingsDto?> UpdateUserNotificationsAsync(Guid userId, UpdateNotificationSettingsRequest request, CancellationToken cancellationToken = default)
-    {
-        var settings = await userRepository.GetNotificationSettingsAsync(userId, cancellationToken);
-        if (settings is null)
-        {
-            return null;
-        }
-
-        settings.EmailEnabled = request.EmailEnabled;
-        settings.TelegramEnabled = request.TelegramEnabled;
-        settings.PushEnabled = request.PushEnabled;
-        settings.QuietHoursStart = request.QuietHoursStart;
-        settings.QuietHoursEnd = request.QuietHoursEnd;
-
-        await userRepository.SaveChangesAsync(cancellationToken);
-
-        return new NotificationSettingsDto
-        {
-            EmailEnabled = settings.EmailEnabled,
-            TelegramEnabled = settings.TelegramEnabled,
-            PushEnabled = settings.PushEnabled,
-            QuietHoursStart = settings.QuietHoursStart,
-            QuietHoursEnd = settings.QuietHoursEnd
-        };
-    }
-
-    public async Task<long?> GetUserTelegramAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
-        return user?.TelegramChatId;
-    }
-
-    public async Task<bool> DeleteUserTelegramAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
-        if (user is null)
-        {
-            return false;
-        }
-
-        user.TelegramChatId = null;
-        user.UpdatedAt = DateTime.UtcNow;
-        await userRepository.SaveChangesAsync(cancellationToken);
-        return true;
-    }
-
-    public Task<IReadOnlyCollection<UserAction>> GetUserActionsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        return userRepository.GetUserActionsAsync(userId, cancellationToken);
-    }
-
-    public async Task<IReadOnlyCollection<UserSessionDto>> GetUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var sessions = await userRepository.GetSessionsAsync(userId, cancellationToken);
-        return sessions
-            .Select(x => new UserSessionDto
-            {
-                Id = x.Id,
-                CreatedAt = x.CreatedAt,
-                ExpiresAt = x.ExpiresAt,
-                Revoked = x.Revoked,
-                RememberMe = x.RememberMe
-            })
-            .ToList();
-    }
-
-    public async Task<bool> DeleteUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var sessions = await userRepository.GetSessionsAsync(userId, includeDeleted: true, cancellationToken);
-        if (sessions.Count == 0)
-        {
-            return false;
-        }
-
-        var now = DateTime.UtcNow;
-        foreach (var session in sessions.Where(x => !x.IsDeleted))
-        {
-            session.Revoked = true;
-            session.IsDeleted = true;
-            session.DeletedAt = now;
-        }
-
-        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
-        if (user is not null)
-        {
-            user.RefreshTokensRevokedAt = now;
-            user.UpdatedAt = now;
-        }
-
-        await userRepository.SaveChangesAsync(cancellationToken);
-        return true;
-    }
-
-    public async Task<DashboardStatsDto> GetDashboardStatsAsync(CancellationToken cancellationToken = default)
-    {
-        var users = await userRepository.GetUsersAsync(cancellationToken);
-        var sessions = await userRepository.GetSessionsCountAsync(cancellationToken);
-
-        return new DashboardStatsDto
-        {
-            TotalUsers = users.Count,
-            ActiveUsers = users.Count(x => x.IsActive),
-            VerifiedUsers = users.Count(x => x.IsVerified),
-            SessionsCount = sessions
-        };
-    }
-
-    public async Task<DashboardActivityDto> GetDashboardActivityAsync(CancellationToken cancellationToken = default)
-    {
-        var actions = await userRepository.GetRecentActionsAsync(50, cancellationToken);
-
-        return new DashboardActivityDto
-        {
-            RecentActions = actions.Select(a => new UserActionActivityDto
-            {
-                UserId = a.UserId,
-                EventId = a.EventId,
-                ActionType = a.ActionType.ToString(),
-                CreatedAt = a.CreatedAt
-            }).ToList()
-        };
-    }
-
-    public async Task<int> BulkBlockAsync(BulkBlockRequest request, CancellationToken cancellationToken = default)
-    {
-        var users = await userRepository.GetUsersAsync(cancellationToken);
-        var ids = request.UserIds.ToHashSet();
-
-        var affected = 0;
-        var now = DateTime.UtcNow;
-        foreach (var user in users.Where(x => ids.Contains(x.Id)))
-        {
-            user.IsActive = false;
-            user.IsDeleted = true;
-            user.DeletedAt = now;
-            user.RefreshTokensRevokedAt = now;
-            user.UpdatedAt = now;
-            affected++;
-        }
-
-        if (affected > 0)
-        {
-            await userRepository.SaveChangesAsync(cancellationToken);
-        }
-
-        return affected;
-    }
-
     private static AdminUserDto MapAdminUser(User user)
     {
         return new AdminUserDto
         {
             Id = user.Id,
+            PublicId = user.PublicId,
             Email = user.Email,
             Username = user.Username,
             FirstName = user.FirstName,
             LastName = user.LastName,
             IsActive = user.IsActive,
-            IsVerified = user.IsVerified,
             Roles = user.UserRoles.Select(x => x.Role.Name).ToArray(),
             CreatedAt = user.CreatedAt,
             LastLoginAt = user.LastLoginAt

@@ -7,16 +7,6 @@ namespace user_service.Repositories;
 
 public sealed class UserRepository(UserServiceDbContext dbContext) : IUserRepository
 {
-    public async Task<User?> GetUserWithDetailsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        return await dbContext.Users
-            .Include(x => x.UserRoles)
-            .ThenInclude(x => x.Role)
-            .Include(x => x.Preferences)
-            .Include(x => x.NotificationSettings)
-            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
-    }
-
     public async Task<User?> GetUserWithRolesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await dbContext.Users
@@ -37,16 +27,6 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
             .ThenInclude(x => x.Role)
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
-    }
-
-    public async Task<Preference?> GetPreferenceAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        return await dbContext.Preferences.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
-    }
-
-    public async Task<NotificationSettings?> GetNotificationSettingsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        return await dbContext.NotificationSettings.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<RefreshToken>> GetSessionsAsync(Guid userId, bool includeDeleted = false, CancellationToken cancellationToken = default)
@@ -71,11 +51,6 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
         }
 
         return await query.SingleOrDefaultAsync(cancellationToken);
-    }
-
-    public Task<int> GetSessionsCountAsync(CancellationToken cancellationToken = default)
-    {
-        return dbContext.RefreshTokens.CountAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<Role>> GetRolesAsync(CancellationToken cancellationToken = default)
@@ -108,22 +83,6 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
         }
 
         return await query.SingleOrDefaultAsync(cancellationToken);
-    }
-
-    public async Task<IReadOnlyCollection<UserAction>> GetUserActionsAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        return await dbContext.UserActions
-            .Where(x => x.UserId == userId)
-            .OrderByDescending(x => x.CreatedAt)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<IReadOnlyCollection<UserAction>> GetRecentActionsAsync(int take, CancellationToken cancellationToken = default)
-    {
-        return await dbContext.UserActions
-            .OrderByDescending(x => x.CreatedAt)
-            .Take(take)
-            .ToListAsync(cancellationToken);
     }
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using user_service.DTOs.Admin;
-using user_service.DTOs.User;
 using user_service.Interfaces;
 
 namespace user_service.Controllers;
@@ -78,69 +77,5 @@ public sealed class AdminController(IAdminService adminService) : ControllerBase
     {
         var ok = await adminService.DeleteUserRoleAsync(id, roleId, cancellationToken);
         return ok ? NoContent() : NotFound();
-    }
-
-    [HttpGet("users/{id:guid}/notifications")]
-    public async Task<IActionResult> GetUserNotifications(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await adminService.GetUserNotificationsAsync(id, cancellationToken);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    [HttpPut("users/{id:guid}/notifications")]
-    public async Task<IActionResult> UpdateUserNotifications(Guid id, [FromBody] UpdateNotificationSettingsRequest request, CancellationToken cancellationToken)
-    {
-        var result = await adminService.UpdateUserNotificationsAsync(id, request, cancellationToken);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    [HttpGet("users/{id:guid}/telegram")]
-    public async Task<IActionResult> GetUserTelegram(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await adminService.GetUserTelegramAsync(id, cancellationToken);
-        return Ok(new { telegramChatId = result });
-    }
-
-    [HttpDelete("users/{id:guid}/telegram")]
-    public async Task<IActionResult> DeleteUserTelegram(Guid id, CancellationToken cancellationToken)
-    {
-        var ok = await adminService.DeleteUserTelegramAsync(id, cancellationToken);
-        return ok ? NoContent() : NotFound();
-    }
-
-    [HttpGet("users/{id:guid}/actions")]
-    public async Task<IActionResult> GetUserActions(Guid id, CancellationToken cancellationToken)
-        => Ok(await adminService.GetUserActionsAsync(id, cancellationToken));
-
-    [HttpGet("users/{id:guid}/sessions")]
-    public async Task<IActionResult> GetUserSessions(Guid id, CancellationToken cancellationToken)
-        => Ok(await adminService.GetUserSessionsAsync(id, cancellationToken));
-
-    [HttpDelete("users/{id:guid}/sessions")]
-    public async Task<IActionResult> DeleteUserSessions(Guid id, CancellationToken cancellationToken)
-    {
-        var ok = await adminService.DeleteUserSessionsAsync(id, cancellationToken);
-        return ok ? NoContent() : NotFound();
-    }
-
-    [HttpGet("dashboard/stats")]
-    public async Task<IActionResult> GetDashboardStats(CancellationToken cancellationToken)
-        => Ok(await adminService.GetDashboardStatsAsync(cancellationToken));
-
-    [HttpGet("dashboard/activity")]
-    public async Task<IActionResult> GetDashboardActivity(CancellationToken cancellationToken)
-        => Ok(await adminService.GetDashboardActivityAsync(cancellationToken));
-
-    [HttpPost("users/bulk-block")]
-    public async Task<IActionResult> BulkBlock([FromBody] BulkBlockRequest request, CancellationToken cancellationToken)
-    {
-        var affected = await adminService.BulkBlockAsync(request, cancellationToken);
-        return Ok(new { affected });
-    }
-
-    [HttpPost("users/bulk-notify")]
-    public IActionResult BulkNotify([FromBody] BulkNotifyRequest request)
-    {
-        return Ok(new { request.UserIds.Count, request.Message, sent = false, note = "Stub endpoint for integration with notification-service." });
     }
 }
