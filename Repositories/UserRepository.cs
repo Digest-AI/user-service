@@ -7,6 +7,11 @@ namespace user_service.Repositories;
 
 public sealed class UserRepository(UserServiceDbContext dbContext) : IUserRepository
 {
+    public async Task AddUserAsync(User user, CancellationToken cancellationToken = default)
+    {
+        await dbContext.Users.AddAsync(user, cancellationToken);
+    }
+
     public async Task<User?> GetUserWithRolesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await dbContext.Users
@@ -25,8 +30,19 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
         return await dbContext.Users
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderByDescending(x => x.DateJoined)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> EmailExistsAsync(string email, Guid? excludeUserId = null, CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.Users.Where(x => x.Email == email);
+        if (excludeUserId.HasValue)
+        {
+            query = query.Where(x => x.Id != excludeUserId.Value);
+        }
+
+        return await query.AnyAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<RefreshToken>> GetSessionsAsync(Guid userId, bool includeDeleted = false, CancellationToken cancellationToken = default)

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using user_service.Data;
 
@@ -11,9 +12,11 @@ using user_service.Data;
 namespace user_service.Migrations
 {
     [DbContext(typeof(UserServiceDbContext))]
-    partial class UserServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260428061516_AddChaining")]
+    partial class AddChaining
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -39,63 +42,6 @@ namespace user_service.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Chains");
-                });
-
-            modelBuilder.Entity("user_service.Models.PendingRegistration", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Age")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(6)
-                        .HasColumnType("nvarchar(6)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Gender")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("Surname")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code");
-
-                    b.HasIndex("Email")
-                        .IsUnique();
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.ToTable("PendingRegistrations");
                 });
 
             modelBuilder.Entity("user_service.Models.RefreshToken", b =>
@@ -320,7 +266,7 @@ namespace user_service.Migrations
                     b.HasOne("user_service.Models.Chain", "Chain")
                         .WithMany("RefreshTokens")
                         .HasForeignKey("ChainId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("user_service.Models.User", "User")
