@@ -21,10 +21,12 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options) : IJwtTokenSer
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.PublicId.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
-            new(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new(ClaimTypes.NameIdentifier, user.Id.ToString())
+            new(JwtRegisteredClaimNames.UniqueName, user.Email),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new("public_id", user.PublicId.ToString()),
+            new("is_verified", user.IsVerified.ToString().ToLowerInvariant())
         };
 
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));

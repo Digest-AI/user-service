@@ -4,42 +4,128 @@ using user_service.Data;
 using user_service.DTOs.Auth;
 using user_service.Interfaces;
 using user_service.Models;
+using user_service.Validation;
 
 namespace user_service.Services;
 
-public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService jwtTokenService) : IAuthService
+public sealed class AuthService(
+    UserServiceDbContext dbContext,
+    IJwtTokenService jwtTokenService,
+    IVerificationCodeService verificationCodeService,
+    IVerificationEmailSender emailSender) : IAuthService
 {
-    public async Task<AuthUserDto> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
+    public async Task<RegistrationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var normalizedUsername = request.Username.Trim();
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        var age = UserInputValidation.ValidateAge(request.Age);
+        var gender = UserInputValidation.ValidateGender(request.Gender);
 
         if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
             throw new InvalidOperationException("Email already exists.");
         }
 
-        if (await dbContext.Users.AnyAsync(x => x.Username == normalizedUsername, cancellationToken))
+        var code = Random.Shared.Next(0, 1_000_000).ToString("D6");
+        var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
+        if (pending is null)
         {
-            throw new InvalidOperationException("Username already exists.");
+            pending = new PendingRegistration
+            {
+                Id = Guid.NewGuid(),
+                Email = normalizedEmail,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                Name = request.Name.Trim(),
+                Surname = request.Surname.Trim(),
+                Age = age,
+                Gender = gender,
+                Code = code,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            await dbContext.PendingRegistrations.AddAsync(pending, cancellationToken);
+        }
+        else
+        {
+            pending.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+            pending.Name = request.Name.Trim();
+            pending.Surname = request.Surname.Trim();
+            pending.Age = age;
+            pending.Gender = gender;
+            pending.Code = code;
+            pending.ExpiresAt = DateTime.UtcNow.AddMinutes(15);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await emailSender.SendCodeAsync(pending.Email, pending.Code, VerificationCodePurpose.EMAIL, cancellationToken);
+
+        return new RegistrationResponse
+        {
+            Email = pending.Email,
+            VerificationCodeExpiresAt = pending.ExpiresAt,
+            Message = "Verification code sent. Confirm registration to create the account."
+        };
+    }
+
+    public async Task<RegistrationResponse?> ResendRegistrationCodeAsync(ResendRegistrationCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
+        if (pending is null)
+        {
+            return null;
+        }
+
+        if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
+        {
+            throw new InvalidOperationException("Email already exists.");
+        }
+
+        pending.Code = Random.Shared.Next(0, 1_000_000).ToString("D6");
+        pending.ExpiresAt = DateTime.UtcNow.AddMinutes(15);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await emailSender.SendCodeAsync(pending.Email, pending.Code, VerificationCodePurpose.EMAIL, cancellationToken);
+
+        return new RegistrationResponse
+        {
+            Email = pending.Email,
+            VerificationCodeExpiresAt = pending.ExpiresAt,
+            Message = "Verification code resent."
+        };
+    }
+
+    public async Task<AuthUserDto?> ConfirmRegistrationAsync(ConfirmRegistrationRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(
+            x => x.Email == normalizedEmail && x.Code == request.Code && x.ExpiresAt > DateTime.UtcNow,
+            cancellationToken);
+
+        if (pending is null)
+        {
+            return null;
+        }
+
+        if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
+        {
+            throw new InvalidOperationException("Email already exists.");
         }
 
         var user = new User
         {
             Id = Guid.NewGuid(),
             PublicId = Guid.NewGuid(),
-            Email = normalizedEmail,
-            Username = normalizedUsername,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            Email = pending.Email,
+            PasswordHash = pending.PasswordHash,
+            IsVerified = true,
+            DateJoined = DateTime.UtcNow,
+            Name = pending.Name,
+            Surname = pending.Surname,
+            Age = pending.Age,
+            Gender = pending.Gender,
+            IsDeleted = false
         };
 
         var defaultRole = await dbContext.Roles.SingleAsync(x => x.Name == "USER", cancellationToken);
-
         user.UserRoles.Add(new UserRole
         {
             UserId = user.Id,
@@ -47,6 +133,7 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             IsDeleted = false
         });
 
+        dbContext.PendingRegistrations.Remove(pending);
         await dbContext.Users.AddAsync(user, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -55,14 +142,14 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
 
     public async Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
 
         var user = await dbContext.Users
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
             .SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
 
-        if (user is null || !user.IsActive)
+        if (user is null || user.IsDeleted)
         {
             return null;
         }
@@ -73,17 +160,24 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             return null;
         }
 
+        var chain = new Chain
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            RememberMe = request.RememberMe
+        };
+
+        dbContext.Chains.Add(chain);
+
         var roles = user.UserRoles.Select(x => x.Role.Name).ToArray();
         var (accessToken, accessExpiresAt) = jwtTokenService.CreateAccessToken(user, roles);
         var (rawRefreshToken, refreshTokenHash, refreshExpiresAt) = jwtTokenService.CreateRefreshToken(request.RememberMe);
 
-        user.LastLoginAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
-
-        user.RefreshTokens.Add(new RefreshToken
+        dbContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
+            ChainId = chain.Id,
             TokenHash = refreshTokenHash,
             ExpiresAt = refreshExpiresAt,
             CreatedAt = DateTime.UtcNow,
@@ -94,9 +188,12 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.EMAIL, cancellationToken);
+
         return new AuthResponse
         {
-            UserId = user.Id,
+            PublicId = user.PublicId,
+            ChainId = chain.Id,
             AccessToken = accessToken,
             RefreshToken = rawRefreshToken,
             AccessTokenExpiresAt = accessExpiresAt,
@@ -112,6 +209,7 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             .Include(x => x.User)
             .ThenInclude(x => x.UserRoles)
             .ThenInclude(x => x.Role)
+            .Include(x => x.Chain)
             .SingleOrDefaultAsync(x => x.TokenHash == refreshTokenHash, cancellationToken);
 
         if (refreshToken is null || refreshToken.Revoked || refreshToken.IsDeleted || refreshToken.ExpiresAt <= DateTime.UtcNow)
@@ -119,18 +217,14 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             return null;
         }
 
-        if (refreshToken.User.RefreshTokensRevokedAt.HasValue && refreshToken.CreatedAt <= refreshToken.User.RefreshTokensRevokedAt.Value)
-        {
-            return null;
-        }
-
         var user = refreshToken.User;
-        if (!user.IsActive)
+        if (user.IsDeleted)
         {
             return null;
         }
 
         refreshToken.Revoked = true;
+        refreshToken.RevokedAt = DateTime.UtcNow;
         refreshToken.IsDeleted = true;
         refreshToken.DeletedAt = DateTime.UtcNow;
 
@@ -142,6 +236,7 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
+            ChainId = refreshToken.ChainId,
             TokenHash = newRefreshHash,
             ExpiresAt = refreshExpiresAt,
             CreatedAt = DateTime.UtcNow,
@@ -150,13 +245,12 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             RememberMe = refreshToken.RememberMe
         });
 
-        user.UpdatedAt = DateTime.UtcNow;
-
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new AuthResponse
         {
-            UserId = user.Id,
+            PublicId = user.PublicId,
+            ChainId = refreshToken.ChainId,
             AccessToken = accessToken,
             RefreshToken = rawRefreshToken,
             AccessTokenExpiresAt = accessExpiresAt,
@@ -176,6 +270,7 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
         }
 
         token.Revoked = true;
+        token.RevokedAt = DateTime.UtcNow;
         token.IsDeleted = true;
         token.DeletedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -190,9 +285,7 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             return false;
         }
 
-        user.RefreshTokensRevokedAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
-
+        user.DateDeleted = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -203,16 +296,14 @@ public sealed class AuthService(UserServiceDbContext dbContext, IJwtTokenService
             .Where(x => x.Id == userId)
             .Select(x => new AuthUserDto
             {
-                Id = x.Id,
                 PublicId = x.PublicId,
                 Email = x.Email,
-                Username = x.Username,
-                FirstName = x.FirstName,
-                LastName = x.LastName,
-                IsActive = x.IsActive,
-                CreatedAt = x.CreatedAt,
-                UpdatedAt = x.UpdatedAt,
-                LastLoginAt = x.LastLoginAt,
+                Name = x.Name,
+                Surname = x.Surname,
+                Age = x.Age,
+                Gender = x.Gender,
+                IsVerified = x.IsVerified,
+                DateJoined = x.DateJoined,
                 Roles = x.UserRoles.Select(ur => ur.Role.Name).ToArray()
             })
             .SingleAsync(cancellationToken);

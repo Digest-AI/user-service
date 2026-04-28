@@ -2,10 +2,11 @@ using BCrypt.Net;
 using user_service.DTOs.User;
 using user_service.Interfaces;
 using user_service.Models;
+using user_service.Validation;
 
 namespace user_service.Services;
 
-public sealed class UserService(IUserRepository userRepository) : IUserService
+public sealed class UserService(IUserRepository userRepository, IVerificationCodeService verificationCodeService) : IUserService
 {
     public async Task<UserProfileDto?> GetMeAsync(Guid userId, CancellationToken cancellationToken = default)
     {
@@ -21,16 +22,56 @@ public sealed class UserService(IUserRepository userRepository) : IUserService
             return null;
         }
 
-        user.Username = request.Username.Trim();
-        user.FirstName = request.FirstName.Trim();
-        user.LastName = request.LastName.Trim();
-        user.UpdatedAt = DateTime.UtcNow;
-
+        user.Age = UserInputValidation.ValidateAge(request.Age);
         await userRepository.SaveChangesAsync(cancellationToken);
         return MapProfile(user);
     }
 
-    public async Task<bool> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken = default)
+    public async Task<bool> RequestEmailChangeAsync(Guid userId, RequestEmailChangeRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.NewEmail);
+        if (await userRepository.EmailExistsAsync(normalizedEmail, userId, cancellationToken))
+        {
+            throw new InvalidOperationException("Email already exists.");
+        }
+
+        await verificationCodeService.CreateCodeAsync(user.Id, normalizedEmail, VerificationCodePurpose.EMAIL, cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> ConfirmEmailChangeAsync(Guid userId, ConfirmEmailChangeRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.NewEmail);
+        if (await userRepository.EmailExistsAsync(normalizedEmail, userId, cancellationToken))
+        {
+            throw new InvalidOperationException("Email already exists.");
+        }
+
+        var consumed = await verificationCodeService.ConsumeCodeAsync(user.Id, request.Code, VerificationCodePurpose.EMAIL, cancellationToken);
+        if (!consumed)
+        {
+            return false;
+        }
+
+        user.Email = normalizedEmail;
+        user.IsVerified = true;
+        await userRepository.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> RequestPasswordChangeAsync(Guid userId, RequestPasswordChangeRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
         if (user is null)
@@ -43,10 +84,25 @@ public sealed class UserService(IUserRepository userRepository) : IUserService
             return false;
         }
 
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
-        user.UpdatedAt = DateTime.UtcNow;
-        user.RefreshTokensRevokedAt = DateTime.UtcNow;
+        await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.PASSWORD, cancellationToken);
+        return true;
+    }
 
+    public async Task<bool> ConfirmPasswordChangeAsync(Guid userId, ConfirmPasswordChangeRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.GetUserByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var consumed = await verificationCodeService.ConsumeCodeAsync(user.Id, request.Code, VerificationCodePurpose.PASSWORD, cancellationToken);
+        if (!consumed)
+        {
+            return false;
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
         await userRepository.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -59,11 +115,8 @@ public sealed class UserService(IUserRepository userRepository) : IUserService
             return false;
         }
 
-        user.IsActive = false;
+        user.DateDeleted = DateTime.UtcNow;
         user.IsDeleted = true;
-        user.DeletedAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
-        user.RefreshTokensRevokedAt = DateTime.UtcNow;
 
         await userRepository.SaveChangesAsync(cancellationToken);
         return true;
@@ -73,16 +126,16 @@ public sealed class UserService(IUserRepository userRepository) : IUserService
     {
         return new UserProfileDto
         {
-            Id = user.Id,
             PublicId = user.PublicId,
             Email = user.Email,
-            Username = user.Username,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            IsActive = user.IsActive,
-            CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt,
-            LastLoginAt = user.LastLoginAt,
+            Name = user.Name,
+            Surname = user.Surname,
+            Age = user.Age,
+            Gender = user.Gender,
+            IsVerified = user.IsVerified,
+            DateJoined = user.DateJoined,
+            DateDeleted = user.DateDeleted,
+            IsDeleted = user.IsDeleted,
             Roles = user.UserRoles.Select(x => x.Role.Name).ToArray()
         };
     }
