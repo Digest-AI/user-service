@@ -83,6 +83,8 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
             entity.HasIndex(x => x.UserId);
             entity.HasIndex(x => x.Code);
             entity.HasIndex(x => x.ExpiresAt);
+
+            entity.HasQueryFilter(x => !x.User.IsDeleted);
         });
 
         modelBuilder.Entity<Chain>(entity =>
@@ -95,6 +97,8 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(x => x.UserId);
+
+            entity.HasQueryFilter(x => !x.User.IsDeleted);
         });
 
         modelBuilder.Entity<RefreshToken>(entity =>
