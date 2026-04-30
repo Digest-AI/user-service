@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using user_service.DTOs.Admin;
 using user_service.Interfaces;
 using user_service.Models;
+using user_service.Validation;
 
 namespace user_service.Services;
 
@@ -22,10 +23,12 @@ public sealed class AdminService(IUserRepository userRepository, IVerificationCo
 
     public async Task<AdminUserDto?> CreateUserAsync(AdminCreateUserRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        UserInputValidation.ValidatePassword(request.Password);
+
         if (await userRepository.EmailExistsAsync(normalizedEmail, cancellationToken: cancellationToken))
         {
-            throw new InvalidOperationException("Email already exists.");
+            throw new InvalidOperationException("email_already_exists");
         }
 
         var user = new User
@@ -64,12 +67,12 @@ public sealed class AdminService(IUserRepository userRepository, IVerificationCo
 
         if (!string.IsNullOrWhiteSpace(request.Email))
         {
-            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+            var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
             if (!string.Equals(user.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase))
             {
                 if (await userRepository.EmailExistsAsync(normalizedEmail, id, cancellationToken))
                 {
-                    throw new InvalidOperationException("Email already exists.");
+                    throw new InvalidOperationException("email_already_exists");
                 }
 
                 user.Email = normalizedEmail;
@@ -80,6 +83,7 @@ public sealed class AdminService(IUserRepository userRepository, IVerificationCo
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
+            UserInputValidation.ValidatePassword(request.Password);
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
         }
 

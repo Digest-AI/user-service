@@ -21,3 +21,13 @@ public sealed class ConfirmPasswordChangeRequest
     public required string Code { get; set; }
     public required string NewPassword { get; set; }
 }
+
+/// <summary>
+/// Response sent after requesting a verification code.
+/// Contains the purpose of the verification code.
+/// </summary>
+public sealed class SendVerificationCodeResponse
+{
+    public required string Purpose { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}

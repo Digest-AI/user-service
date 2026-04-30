@@ -7,6 +7,7 @@ public sealed class VerificationCode
     public required string Code { get; set; }
     public VerificationCodePurpose Purpose { get; set; }
     public DateTime ExpiresAt { get; set; }
+    public DateTime? ConsumedAt { get; set; }
 
     public User User { get; set; } = null!;
 }
