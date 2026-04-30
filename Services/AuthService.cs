@@ -17,10 +17,11 @@ public sealed class AuthService(
     public async Task<RegistrationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        UserInputValidation.ValidatePassword(request.Password);
 
         if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
-            throw new InvalidOperationException("Email already exists.");
+            throw new InvalidOperationException("email_already_exists");
         }
 
         var code = Random.Shared.Next(0, 1_000_000).ToString("D6");
@@ -49,9 +50,10 @@ public sealed class AuthService(
 
         return new RegistrationResponse
         {
+            PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
-            Message = "Verification code sent. Confirm registration to create the account."
+            Message = "Verification code sent."
         };
     }
 
@@ -66,7 +68,7 @@ public sealed class AuthService(
 
         if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
-            throw new InvalidOperationException("Email already exists.");
+            throw new InvalidOperationException("email_already_exists");
         }
 
         pending.Code = Random.Shared.Next(0, 1_000_000).ToString("D6");
@@ -77,6 +79,7 @@ public sealed class AuthService(
 
         return new RegistrationResponse
         {
+            PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
             Message = "Verification code resent."

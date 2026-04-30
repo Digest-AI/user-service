@@ -1,90 +1,187 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using user_service.Constants;
 using user_service.DTOs.Admin;
+using user_service.DTOs.Common;
 using user_service.Interfaces;
 
 namespace user_service.Controllers;
 
 [ApiController]
-[Authorize(Roles = "ADMIN")]
+[Authorize(Roles = "admin")]
 [Route("api/admin")]
 public sealed class AdminController(IAdminService adminService) : ControllerBase
 {
-    /// <summary>Gets all users.</summary>
+    /// <summary>Get list of all users.</summary>
+    /// <description>
+    /// Retrieve list of all users in the system. Admin only endpoint.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// </remarks>
     [HttpGet("users")]
-    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken) => Ok(await adminService.GetUsersAsync(cancellationToken));
-
-    /// <summary>Gets a user by ID.</summary>
-    [HttpGet("users/{id:guid}")]
-    public async Task<IActionResult> GetUser(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
     {
-        var user = await adminService.GetUserAsync(id, cancellationToken);
-        return user is null ? NotFound() : Ok(user);
+        var result = await adminService.GetUsersAsync(cancellationToken);
+        return Ok(result);
     }
 
-    /// <summary>Creates a user.</summary>
+    /// <summary>Get user details by ID.</summary>
+    /// <description>
+    /// Retrieve detailed information about a specific user by their ID. Admin only endpoint.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// - `email_not_found` - User not found (404 Not Found, Attr: id)
+    /// </remarks>
+    [HttpGet("users/{id:guid}")]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUser([FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var user = await adminService.GetUserAsync(id, cancellationToken);
+        return user is null ? NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound, Attr = "id" }) : Ok(user);
+    }
+
+    /// <summary>Create new user account.</summary>
+    /// <description>
+    /// Create a new user account with provided credentials and profile info. Admin only endpoint.
+    /// Sends verification code to email. User must verify email before account is fully active.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_email_format` - Email format is invalid (400 Bad Request, Attr: email)
+    /// - `password_too_small` - Password doesn't meet requirements: min 8 chars, at least 1 letter, 1 digit (400 Bad Request, Attr: password)
+    /// - `invalid_age` - Age is invalid (400 Bad Request, Attr: age)
+    /// - `invalid_gender` - Gender is invalid (400 Bad Request, Attr: gender)
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// - `email_already_exists` - Email already registered (409 Conflict, Attr: email)
+    /// </remarks>
     [HttpPost("users")]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateUser([FromBody] AdminCreateUserRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var user = await adminService.CreateUserAsync(request, cancellationToken);
-            return Ok(user);
+            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new ErrorResponse { Code = 409, Detail = ex.Message, Attr = "email" });
         }
     }
 
-    /// <summary>Updates a user.</summary>
+    /// <summary>Update user details.</summary>
+    /// <description>
+    /// Update user's profile information (email, password, name, age, gender, etc.). Admin only endpoint.
+    /// Only provided fields will be updated. If email is changed, user must verify new email.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_email_format` - Email format is invalid (400 Bad Request, Attr: email)
+    /// - `password_too_small` - Password doesn't meet requirements: min 8 chars, at least 1 letter, 1 digit (400 Bad Request, Attr: password)
+    /// - `invalid_age` - Age is invalid (400 Bad Request, Attr: age)
+    /// - `invalid_gender` - Gender is invalid (400 Bad Request, Attr: gender)
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// - `email_not_found` - User not found (404 Not Found, Attr: id)
+    /// - `email_already_exists` - Email already registered (409 Conflict, Attr: email)
+    /// </remarks>
     [HttpPut("users/{id:guid}")]
-    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] AdminUpdateUserRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateUser([FromRoute] Guid id, [FromBody] AdminUpdateUserRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var user = await adminService.UpdateUserAsync(id, request, cancellationToken);
-            return user is null ? NotFound() : Ok(user);
+            return user is null ? NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound, Attr = "id" }) : Ok(user);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { message = ex.Message });
+            return Conflict(new ErrorResponse { Code = 409, Detail = ex.Message, Attr = "email" });
         }
     }
 
-    /// <summary>Deletes a user.</summary>
+    /// <summary>Delete user account permanently.</summary>
+    /// <description>
+    /// Permanently delete a user account and all associated data. Admin only endpoint.
+    /// This action cannot be undone.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// - `email_not_found` - User not found (404 Not Found, Attr: id)
+    /// </remarks>
     [HttpDelete("users/{id:guid}")]
-    public async Task<IActionResult> DeleteUser(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteUser([FromRoute] Guid id, CancellationToken cancellationToken)
     {
         var ok = await adminService.DeleteUserAsync(id, cancellationToken);
-        return ok ? NoContent() : NotFound();
+        return ok ? NoContent() : NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound, Attr = "id" });
     }
 
-    /// <summary>Gets roles.</summary>
+    /// <summary>Get list of all available roles.</summary>
+    /// <description>
+    /// Retrieve all system roles available for user assignment. Admin only endpoint.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// </remarks>
     [HttpGet("roles")]
-    public async Task<IActionResult> GetRoles(CancellationToken cancellationToken) => Ok(await adminService.GetRolesAsync(cancellationToken));
-
-    /// <summary>Adds roles to a user.</summary>
-    [HttpPost("users/{id:guid}/roles")]
-    public async Task<IActionResult> AddRoles(Guid id, [FromBody] AddUserRolesRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetRoles(CancellationToken cancellationToken)
     {
-        var ok = await adminService.AddUserRolesAsync(id, request, cancellationToken);
-        return ok ? NoContent() : NotFound();
+        var roles = await adminService.GetRolesAsync(cancellationToken);
+        return Ok(roles);
     }
 
-    /// <summary>Replaces user roles.</summary>
+    /// <summary>Set user roles (replace existing roles).</summary>
+    /// <description>
+    /// Replace user's existing roles with provided role list. Admin only endpoint.
+    /// This completely replaces the user's role assignment, not adding to it.
+    /// </description>
+    /// <remarks>
+    /// **Error Response (Detail field values):**
+    /// - `invalid_token` - Invalid or expired token (401 Unauthorized)
+    /// - `access_denied` - User lacks admin role (403 Forbidden)
+    /// - `email_not_found` - User not found (404 Not Found, Attr: id)
+    /// </remarks>
     [HttpPut("users/{id:guid}/roles")]
-    public async Task<IActionResult> SetRoles(Guid id, [FromBody] SetUserRolesRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetRoles([FromRoute] Guid id, [FromBody] SetUserRolesRequest request, CancellationToken cancellationToken)
     {
         var ok = await adminService.SetUserRolesAsync(id, request, cancellationToken);
-        return ok ? NoContent() : NotFound();
-    }
-
-    /// <summary>Deletes a role link from a user.</summary>
-    [HttpDelete("users/{id:guid}/roles/{roleId:guid}")]
-    public async Task<IActionResult> DeleteRole(Guid id, Guid roleId, CancellationToken cancellationToken)
-    {
-        var ok = await adminService.DeleteUserRoleAsync(id, roleId, cancellationToken);
-        return ok ? NoContent() : NotFound();
+        return ok ? NoContent() : NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound, Attr = "id" });
     }
 }

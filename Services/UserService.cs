@@ -50,10 +50,10 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
             return false;
         }
 
-        var normalizedEmail = UserInputValidation.NormalizeEmail(request.NewEmail);
+        var normalizedEmail = UserInputValidation.ValidateNewEmail(user.Email, request.NewEmail);
         if (await userRepository.EmailExistsAsync(normalizedEmail, userId, cancellationToken))
         {
-            throw new InvalidOperationException("Email already exists.");
+            throw new InvalidOperationException("email_already_exists");
         }
 
         await verificationCodeService.CreateCodeAsync(user.Id, normalizedEmail, VerificationCodePurpose.EMAIL, cancellationToken);
@@ -71,13 +71,13 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.NewEmail);
         if (await userRepository.EmailExistsAsync(normalizedEmail, userId, cancellationToken))
         {
-            throw new InvalidOperationException("Email already exists.");
+            throw new InvalidOperationException("email_already_exists");
         }
 
         var consumed = await verificationCodeService.ConsumeCodeAsync(user.Id, request.Code, VerificationCodePurpose.EMAIL, cancellationToken);
         if (!consumed)
         {
-            return false;
+            throw new InvalidOperationException("invalid_code");
         }
 
         user.Email = normalizedEmail;
@@ -96,7 +96,7 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
 
         if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
         {
-            return false;
+            throw new InvalidOperationException("password_incorrect");
         }
 
         await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.PASSWORD, cancellationToken);
@@ -114,7 +114,13 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
         var consumed = await verificationCodeService.ConsumeCodeAsync(user.Id, request.Code, VerificationCodePurpose.PASSWORD, cancellationToken);
         if (!consumed)
         {
-            return false;
+            throw new InvalidOperationException("invalid_code");
+        }
+
+        UserInputValidation.ValidatePassword(request.NewPassword);
+        if (BCrypt.Net.BCrypt.Verify(request.NewPassword, user.PasswordHash))
+        {
+            throw new InvalidOperationException("password_the_same");
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);

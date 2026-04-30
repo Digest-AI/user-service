@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using user_service.Data;
 using user_service.Interfaces;
 using user_service.Models;
+using user_service.Validation;
 
 namespace user_service.Services;
 
@@ -29,7 +30,7 @@ public sealed class VerificationCodeService(UserServiceDbContext dbContext, IVer
 
     public async Task<bool> ResendEmailCodeAsync(string email, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var normalizedEmail = UserInputValidation.NormalizeEmail(email);
         var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
         if (user is null)
         {
@@ -42,42 +43,47 @@ public sealed class VerificationCodeService(UserServiceDbContext dbContext, IVer
 
     public async Task<bool> VerifyEmailAsync(string email, string code, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var normalizedEmail = UserInputValidation.NormalizeEmail(email);
+        UserInputValidation.ValidateCode(code);
+        
         var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
         if (user is null)
         {
             return false;
         }
 
-        var consumed = await ConsumeCodeAsync(user.Id, code, VerificationCodePurpose.EMAIL, cancellationToken);
-        if (!consumed)
+        var verificationCode = await dbContext.VerificationCodes
+            .Where(x => x.UserId == user.Id && x.Purpose == VerificationCodePurpose.EMAIL)
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (verificationCode is null || verificationCode.Code != code || verificationCode.ExpiresAt < DateTime.UtcNow)
         {
             return false;
         }
 
         user.IsVerified = true;
+        verificationCode.ConsumedAt = DateTime.UtcNow;
+        
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
 
     public async Task<bool> ConsumeCodeAsync(Guid userId, string code, VerificationCodePurpose purpose, CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
-        var matchedCode = await dbContext.VerificationCodes
-            .Where(x => x.UserId == userId && x.Purpose == purpose && x.ExpiresAt > now)
-            .OrderByDescending(x => x.ExpiresAt)
-            .FirstOrDefaultAsync(x => x.Code == code, cancellationToken);
+        UserInputValidation.ValidateCode(code);
+        
+        var verificationCode = await dbContext.VerificationCodes
+            .Where(x => x.UserId == userId && x.Purpose == purpose)
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (matchedCode is null)
+        if (verificationCode is null || verificationCode.Code != code || verificationCode.ExpiresAt < DateTime.UtcNow)
         {
             return false;
         }
 
-        var relatedCodes = await dbContext.VerificationCodes
-            .Where(x => x.UserId == userId && x.Purpose == purpose)
-            .ToListAsync(cancellationToken);
-
-        dbContext.VerificationCodes.RemoveRange(relatedCodes);
+        verificationCode.ConsumedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }

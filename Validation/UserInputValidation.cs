@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Text.RegularExpressions;
 
 namespace user_service.Validation;
 
@@ -17,7 +18,7 @@ public static class UserInputValidation
     {
         if (string.IsNullOrWhiteSpace(email))
         {
-            throw new InvalidOperationException("Email is required.");
+            throw new InvalidOperationException("invalid_email_format");
         }
 
         var normalized = email.Trim().ToLowerInvariant();
@@ -26,15 +27,55 @@ public static class UserInputValidation
             var mailAddress = new MailAddress(normalized);
             if (!string.Equals(mailAddress.Address, normalized, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Invalid email.");
+                throw new InvalidOperationException("invalid_email_format");
             }
         }
         catch (FormatException)
         {
-            throw new InvalidOperationException("Invalid email.");
+            throw new InvalidOperationException("invalid_email_format");
         }
 
         return normalized;
+    }
+
+    public static string ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("password_too_small");
+        }
+
+        if (password.Length < 8)
+        {
+            throw new InvalidOperationException("password_too_small");
+        }
+
+        var hasLetter = Regex.IsMatch(password, @"[a-zA-Z]");
+        var hasDigit = Regex.IsMatch(password, @"\d");
+
+        if (!hasLetter)
+        {
+            throw new InvalidOperationException("password_only_numbers");
+        }
+
+        if (!hasDigit)
+        {
+            throw new InvalidOperationException("password_only_letters");
+        }
+
+        return password;
+    }
+
+    public static string ValidateNewPassword(string currentPassword, string newPassword)
+    {
+        ValidatePassword(newPassword);
+
+        if (string.Equals(currentPassword, newPassword))
+        {
+            throw new InvalidOperationException("password_the_same");
+        }
+
+        return newPassword;
     }
 
     public static int ValidateAge(int age)
@@ -66,5 +107,32 @@ public static class UserInputValidation
         }
 
         return normalized;
+    }
+
+    public static string ValidateCode(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("code_too_short");
+        }
+
+        if (code.Length != 6 || !Regex.IsMatch(code, @"^\d{6}$"))
+        {
+            throw new InvalidOperationException("code_too_short");
+        }
+
+        return code;
+    }
+
+    public static string ValidateNewEmail(string currentEmail, string newEmail)
+    {
+        var normalizedNew = NormalizeEmail(newEmail);
+
+        if (string.Equals(currentEmail, normalizedNew, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("email_the_same");
+        }
+
+        return normalizedNew;
     }
 }
