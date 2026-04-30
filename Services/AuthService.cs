@@ -17,8 +17,6 @@ public sealed class AuthService(
     public async Task<RegistrationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
-        var age = UserInputValidation.ValidateAge(request.Age);
-        var gender = UserInputValidation.ValidateGender(request.Gender);
 
         if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
@@ -34,10 +32,6 @@ public sealed class AuthService(
                 Id = Guid.NewGuid(),
                 Email = normalizedEmail,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-                Name = request.Name.Trim(),
-                Surname = request.Surname.Trim(),
-                Age = age,
-                Gender = gender,
                 Code = code,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(15)
             };
@@ -46,10 +40,6 @@ public sealed class AuthService(
         else
         {
             pending.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-            pending.Name = request.Name.Trim();
-            pending.Surname = request.Surname.Trim();
-            pending.Age = age;
-            pending.Gender = gender;
             pending.Code = code;
             pending.ExpiresAt = DateTime.UtcNow.AddMinutes(15);
         }
@@ -118,10 +108,10 @@ public sealed class AuthService(
             PasswordHash = pending.PasswordHash,
             IsVerified = true,
             DateJoined = DateTime.UtcNow,
-            Name = pending.Name,
-            Surname = pending.Surname,
-            Age = pending.Age,
-            Gender = pending.Gender,
+            Name = string.Empty,
+            Surname = string.Empty,
+            Age = 0,
+            Gender = "unknown",
             IsDeleted = false
         };
 
