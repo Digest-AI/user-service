@@ -17,7 +17,10 @@ public sealed class UserProfileDto
 
 public sealed class UpdateProfileRequest
 {
+    public required string Name { get; set; }
+    public required string Surname { get; set; }
     public int Age { get; set; }
+    public required string Gender { get; set; }
 }
 
 public sealed class ChangePasswordRequest

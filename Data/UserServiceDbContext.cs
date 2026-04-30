@@ -41,9 +41,6 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
 
             entity.Property(x => x.Email).HasMaxLength(256);
             entity.Property(x => x.PasswordHash).HasMaxLength(512);
-            entity.Property(x => x.Name).HasMaxLength(128);
-            entity.Property(x => x.Surname).HasMaxLength(128);
-            entity.Property(x => x.Gender).HasMaxLength(32);
             entity.Property(x => x.Code).HasMaxLength(6);
         });
 
@@ -86,6 +83,8 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
             entity.HasIndex(x => x.UserId);
             entity.HasIndex(x => x.Code);
             entity.HasIndex(x => x.ExpiresAt);
+
+            entity.HasQueryFilter(x => !x.User.IsDeleted);
         });
 
         modelBuilder.Entity<Chain>(entity =>
@@ -98,6 +97,8 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(x => x.UserId);
+
+            entity.HasQueryFilter(x => !x.User.IsDeleted);
         });
 
         modelBuilder.Entity<RefreshToken>(entity =>

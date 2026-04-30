@@ -22,7 +22,22 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
             return null;
         }
 
+        var name = request.Name.Trim();
+        var surname = request.Surname.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 128)
+        {
+            throw new InvalidOperationException("Name is invalid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(surname) || surname.Length > 128)
+        {
+            throw new InvalidOperationException("Surname is invalid.");
+        }
+
+        user.Name = name;
+        user.Surname = surname;
         user.Age = UserInputValidation.ValidateAge(request.Age);
+        user.Gender = UserInputValidation.ValidateGender(request.Gender);
         await userRepository.SaveChangesAsync(cancellationToken);
         return MapProfile(user);
     }

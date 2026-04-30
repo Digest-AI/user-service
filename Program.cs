@@ -12,6 +12,14 @@ using user_service.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var rawPort = Environment.GetEnvironmentVariable("PORT")
+    ?? Environment.GetEnvironmentVariable("WEBSITES_PORT");
+
+if (int.TryParse(rawPort, out var port) && port > 0)
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -40,26 +48,40 @@ builder.Services.Configure<SendGridOptions>(builder.Configuration.GetSection(Sen
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 var sendGridOptions = builder.Configuration.GetSection(SendGridOptions.SectionName).Get<SendGridOptions>() ?? new SendGridOptions();
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 
 if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured. Set it in User Secrets.");
+    throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured. Set it in User Secrets or environment variables.");
 }
+
+jwtOptions.Key = string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
+    ? Environment.GetEnvironmentVariable("JWT_KEY") ?? jwtOptions.Key
+    : jwtOptions.Key;
 
 if (string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("JWT key is not configured. Set 'Jwt:Key' in User Secrets.");
+    throw new InvalidOperationException("JWT key is not configured. Set 'Jwt:Key' in User Secrets or JWT_KEY in environment variables.");
 }
+
+sendGridOptions.ApiKey = string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) || sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
+    ? Environment.GetEnvironmentVariable("SENDGRID_API_KEY") ?? sendGridOptions.ApiKey
+    : sendGridOptions.ApiKey;
+
+sendGridOptions.FromEmail = string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) || sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
+    ? Environment.GetEnvironmentVariable("SENDGRID_FROM_EMAIL") ?? sendGridOptions.FromEmail
+    : sendGridOptions.FromEmail;
 
 if (string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) || sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("SendGrid API key is not configured. Set 'SendGrid:ApiKey' in User Secrets.");
+    throw new InvalidOperationException("SendGrid API key is not configured. Set 'SendGrid:ApiKey' or SENDGRID_API_KEY.");
 }
 
 if (string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) || sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("SendGrid sender email is not configured. Set 'SendGrid:FromEmail' in User Secrets.");
+    throw new InvalidOperationException("SendGrid sender email is not configured. Set 'SendGrid:FromEmail' or SENDGRID_FROM_EMAIL.");
 }
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key));
@@ -99,7 +121,16 @@ builder.Services.AddScoped<IInternalUserService, InternalUserService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<UserServiceDbContext>();
+    db.Database.Migrate();
+}
+
+var enableSwagger = app.Environment.IsDevelopment() ||
+                    string.Equals(Environment.GetEnvironmentVariable("ENABLE_SWAGGER"), "true", StringComparison.OrdinalIgnoreCase);
+
+if (enableSwagger)
 {
     app.MapOpenApi();
     app.UseSwagger();
@@ -110,11 +141,19 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+var runningInContainer = string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
+if (!runningInContainer)
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors("SwaggerAndLocal");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/", () => Results.Ok(new { status = "ok", service = "user-service" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapControllers();
 
