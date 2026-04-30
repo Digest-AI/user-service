@@ -41,9 +41,6 @@ public sealed class UserServiceDbContext(DbContextOptions<UserServiceDbContext> 
 
             entity.Property(x => x.Email).HasMaxLength(256);
             entity.Property(x => x.PasswordHash).HasMaxLength(512);
-            entity.Property(x => x.Name).HasMaxLength(128);
-            entity.Property(x => x.Surname).HasMaxLength(128);
-            entity.Property(x => x.Gender).HasMaxLength(32);
             entity.Property(x => x.Code).HasMaxLength(6);
         });
 
