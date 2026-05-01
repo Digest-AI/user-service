@@ -14,9 +14,57 @@ public sealed class UserService(IUserRepository userRepository, IVerificationCod
         return user is null ? null : MapProfile(user);
     }
 
+    public async Task<UserProfileDto?> GetMeByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.GetUserByPublicIdAsync(publicId, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
+
+        // Load roles if not already loaded
+        var userWithRoles = await userRepository.GetUserWithRolesAsync(user.Id, cancellationToken);
+        return userWithRoles is null ? null : MapProfile(userWithRoles);
+    }
+
     public async Task<UserProfileDto?> UpdateMeAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userRepository.GetUserWithRolesAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var name = request.Name.Trim();
+        var surname = request.Surname.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 128)
+        {
+            throw new InvalidOperationException("Name is invalid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(surname) || surname.Length > 128)
+        {
+            throw new InvalidOperationException("Surname is invalid.");
+        }
+
+        user.Name = name;
+        user.Surname = surname;
+        user.Age = UserInputValidation.ValidateAge(request.Age);
+        user.Gender = UserInputValidation.ValidateGender(request.Gender);
+        await userRepository.SaveChangesAsync(cancellationToken);
+        return MapProfile(user);
+    }
+
+    public async Task<UserProfileDto?> UpdateMeByPublicIdAsync(Guid publicId, UpdateProfileRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.GetUserByPublicIdAsync(publicId, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
+
+        // Reload with roles to get the full profile after update
+        user = await userRepository.GetUserWithRolesAsync(user.Id, cancellationToken);
         if (user is null)
         {
             return null;

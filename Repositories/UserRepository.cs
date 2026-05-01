@@ -26,6 +26,12 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
             .SingleOrDefaultAsync(x => x.Id == userId && !x.IsDeleted, cancellationToken);
     }
 
+    public async Task<User?> GetUserByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Users
+            .SingleOrDefaultAsync(x => x.PublicId == publicId && !x.IsDeleted, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<User>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
         return await dbContext.Users
