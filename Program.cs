@@ -5,14 +5,12 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Swashbuckle.AspNetCore.Filters;
 using user_service.Data;
 using user_service.DTOs.Common;
 using user_service.Interfaces;
 using user_service.Options;
 using user_service.Repositories;
 using user_service.Services;
-using user_service.Swagger;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +30,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(options =>
 {
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -48,12 +47,8 @@ builder.Services.AddSwaggerGen(options =>
             return false;
         return true;
     });
-
-    // Add request/response examples
-    options.ExampleFilters();
 });
 
-builder.Services.AddSwaggerExamples();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>

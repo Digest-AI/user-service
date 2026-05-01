@@ -1,10 +1,10 @@
 namespace user_service.DTOs.Auth;
 
 /// <summary>
-/// Error response for failed API calls.
+/// Error response for failed auth API calls.
 /// Contains information about what went wrong.
 /// </summary>
-public sealed class ErrorResponse
+public sealed class AuthErrorResponse
 {
     /// <summary>
     /// Human-readable error message describing what went wrong.
