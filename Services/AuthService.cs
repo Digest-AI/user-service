@@ -53,15 +53,10 @@ public sealed class AuthService(
 
         return new VerificationInitiationResponse
         {
-            PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
-<<<<<<< Updated upstream
-            Message = "Verification code sent."
-=======
             Purpose = "verify_email",
             Message = "Verification code sent. Confirm registration to create the account."
->>>>>>> Stashed changes
         };
     }
 
@@ -87,7 +82,6 @@ public sealed class AuthService(
 
         return new VerificationInitiationResponse
         {
-            PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
             Purpose = "verify_email",

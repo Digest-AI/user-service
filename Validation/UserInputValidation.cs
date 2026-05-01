@@ -42,25 +42,17 @@ public static class UserInputValidation
     {
         if (string.IsNullOrWhiteSpace(password))
         {
-            throw new InvalidOperationException("password_too_small");
+            throw new InvalidOperationException("Password is required.");
         }
 
         if (password.Length < 8)
         {
-            throw new InvalidOperationException("password_too_small");
+            throw new InvalidOperationException("Password must be at least 8 characters long.");
         }
 
-        var hasLetter = Regex.IsMatch(password, @"[a-zA-Z]");
-        var hasDigit = Regex.IsMatch(password, @"\d");
-
-        if (!hasLetter)
+        if (!password.Any(char.IsDigit))
         {
-            throw new InvalidOperationException("password_only_numbers");
-        }
-
-        if (!hasDigit)
-        {
-            throw new InvalidOperationException("password_only_letters");
+            throw new InvalidOperationException("Password must contain at least one digit.");
         }
 
         return password;
@@ -109,7 +101,6 @@ public static class UserInputValidation
         return normalized;
     }
 
-<<<<<<< Updated upstream
     public static string ValidateCode(string code)
     {
         if (string.IsNullOrWhiteSpace(code))
@@ -135,25 +126,5 @@ public static class UserInputValidation
         }
 
         return normalizedNew;
-=======
-    public static string ValidatePassword(string password)
-    {
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            throw new InvalidOperationException("Password is required.");
-        }
-
-        if (password.Length < 8)
-        {
-            throw new InvalidOperationException("Password must be at least 8 characters long.");
-        }
-
-        if (!password.Any(char.IsDigit))
-        {
-            throw new InvalidOperationException("Password must contain at least one digit.");
-        }
-
-        return password;
->>>>>>> Stashed changes
     }
 }
