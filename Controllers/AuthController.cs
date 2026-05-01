@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Filters;
 using user_service.Constants;
 using user_service.DTOs.Auth;
+using user_service.DTOs.Common;
 using user_service.Interfaces;
 using user_service.Swagger.Examples;
 using user_service.Swagger.Examples.Auth;
@@ -45,7 +46,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("register")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(PurposeResponse), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         try
@@ -55,7 +56,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -83,18 +84,18 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("register/resend-code")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(PurposeResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ResendRegistrationCode([FromBody] ResendRegistrationCodeRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var response = await authService.ResendRegistrationCodeAsync(request, cancellationToken);
-            return response is null ? NotFound(new ErrorResponse { Message = "Pending registration not found." }) : Ok(new PurposeResponse { Purpose = response.Purpose });
+            return response is null ? NotFound(new AuthErrorResponse { Message = "Pending registration not found." }) : Ok(new PurposeResponse { Purpose = response.Purpose });
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -142,18 +143,18 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("register/confirm")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(AuthSuccessResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ConfirmRegistration([FromBody] ConfirmRegistrationRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var response = await authService.ConfirmRegistrationAsync(request, cancellationToken);
-            return response is null ? BadRequest(new ErrorResponse { Message = "Invalid or expired verification code." }) : Ok(response);
+            return response is null ? BadRequest(new AuthErrorResponse { Message = "Invalid or expired verification code." }) : Ok(response);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -200,13 +201,13 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("login")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.LoginAsync(request, cancellationToken);
         if (result is null)
         {
-            return Unauthorized(new ErrorResponse { Message = "Invalid credentials or inactive account." });
+            return Unauthorized(new AuthErrorResponse { Message = "Invalid credentials or inactive account." });
         }
 
         return Ok(result);
@@ -255,13 +256,13 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("refresh")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(AuthSuccessResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.RefreshAsync(request, cancellationToken);
         if (result is null)
         {
-            return Unauthorized(new ErrorResponse { Message = "Invalid refresh token." });
+            return Unauthorized(new AuthErrorResponse { Message = "Invalid refresh token." });
         }
 
         return Ok(result);
@@ -299,7 +300,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("restore")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(PurposeResponse), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> RestorePassword([FromBody] RestorePasswordRequest request, CancellationToken cancellationToken)
     {
         try
@@ -309,7 +310,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -339,18 +340,18 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("restore/resend-code")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(PurposeResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ResendRestorePasswordCode([FromBody] ResendRestorePasswordCodeRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var response = await authService.ResendRestorePasswordCodeAsync(request, cancellationToken);
-            return response is null ? NotFound(new ErrorResponse { Message = "User not found." }) : Ok(new PurposeResponse { Purpose = response.Purpose });
+            return response is null ? NotFound(new AuthErrorResponse { Message = "User not found." }) : Ok(new PurposeResponse { Purpose = response.Purpose });
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -392,8 +393,8 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [HttpPost("restore/confirm")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(SuccessResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ConfirmRestorePassword([FromBody] ConfirmRestorePasswordRequest request, CancellationToken cancellationToken)
     {
         try
@@ -401,11 +402,11 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
             var success = await authService.ConfirmRestorePasswordAsync(request, cancellationToken);
             return success 
                 ? Ok(new SuccessResponse { Message = "Password restored successfully." }) 
-                : BadRequest(new ErrorResponse { Message = "Invalid or expired verification code." });
+                : BadRequest(new AuthErrorResponse { Message = "Invalid or expired verification code." });
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ErrorResponse { Message = ex.Message });
+            return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
     }
 
@@ -450,7 +451,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
         var userId = GetUserId();
         if (userId is null)
         {
-            return Unauthorized(new ErrorResponse { Message = "User not authenticated." });
+            return Unauthorized(new ErrorResponse { Code = 401, Detail = "User not authenticated." });
         }
 
         var refreshToken = request?.RefreshToken ?? string.Empty;
@@ -507,7 +508,7 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
         var userId = GetUserId();
         if (userId is null)
         {
-            return Unauthorized(new ErrorResponse { Message = "User not authenticated." });
+            return Unauthorized(new ErrorResponse { Code = 401, Detail = "User not authenticated." });
         }
 
         await authService.LogoutAllDevicesAsync(userId.Value, cancellationToken);
