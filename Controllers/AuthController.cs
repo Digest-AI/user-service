@@ -174,16 +174,17 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     /// **Behavior:**
     /// 
     /// **Case 1: User is verified (normal case)**
-    /// - Returns AuthSuccessResponse with all authentication tokens
+    /// - Returns LoginSuccessResponse with all authentication tokens
     /// - Access token is issued for API authentication
     /// - Refresh token is issued for obtaining new access tokens
     /// - User can immediately use the tokens
+    /// - Response: { publicId, accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt, rememberMe }
     /// 
     /// **Case 2: User is not verified (registration incomplete)**
-    /// - Returns VerificationRequiredResponse instead
+    /// - Returns LoginVerificationRequiredResponse with purpose
     /// - Email verification code is sent to user's email
     /// - User must verify email before accessing the system
-    /// - Common scenario: User started registration but didn't complete confirmation
+    /// - Response: { purpose: "verify_email" }
     /// 
     /// **Tokens details:**
     /// - Access Token: Valid for ~1 hour, use in Authorization: Bearer {accessToken}
@@ -193,14 +194,15 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     /// - New refresh token chain is created per login (for security/audit trail)
     /// 
     /// **Next Steps:**
-    /// - If isVerified = true: Use accessToken for authenticated API requests
-    /// - If isVerified = false: Call POST /api/auth/register/confirm with the code sent to email
+    /// - If response has publicId: User is authenticated, use accessToken for API requests
+    /// - If response has purpose: User needs email verification, call POST /api/auth/register/confirm with code
     /// </remarks>
-    /// <response code="200">Authentication successful. Response contains either authenticated tokens (if verified) or verification requirement (if not verified).</response>
+    /// <response code="200">Authentication successful. Returns either LoginSuccessResponse or LoginVerificationRequiredResponse.</response>
     /// <response code="401">Invalid credentials: email not found or password incorrect.</response>
     [HttpPost("login")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoginSuccessResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoginVerificationRequiredResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {

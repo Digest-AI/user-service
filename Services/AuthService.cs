@@ -236,7 +236,7 @@ public sealed class AuthService(
         return true;
     }
 
-    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
+    public async Task<object?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
 
@@ -260,16 +260,9 @@ public sealed class AuthService(
         if (!user.IsVerified)
         {
             var code = await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.EMAIL, cancellationToken);
-            return new LoginResponse
+            return new LoginVerificationRequiredResponse
             {
-                IsVerified = false,
-                VerificationRequired = new VerificationRequiredResponse
-                {
-                    Email = user.Email,
-                    VerificationCodeExpiresAt = code.ExpiresAt,
-                    Purpose = "verify_email",
-                    Message = "Email verification required. Please check your email for the verification code."
-                }
+                Purpose = "verify_email"
             };
         }
 
@@ -301,18 +294,14 @@ public sealed class AuthService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new LoginResponse
+        return new LoginSuccessResponse
         {
-            IsVerified = true,
-            AuthSuccess = new AuthSuccessResponse
-            {
-                PublicId = user.PublicId,
-                AccessToken = accessToken,
-                RefreshToken = rawRefreshToken,
-                AccessTokenExpiresAt = accessExpiresAt,
-                RefreshTokenExpiresAt = refreshExpiresAt,
-                RememberMe = request.RememberMe
-            }
+            PublicId = user.PublicId,
+            AccessToken = accessToken,
+            RefreshToken = rawRefreshToken,
+            AccessTokenExpiresAt = accessExpiresAt,
+            RefreshTokenExpiresAt = refreshExpiresAt,
+            RememberMe = request.RememberMe
         };
     }
 
