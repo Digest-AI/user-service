@@ -31,6 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include=".github\workflows\" />
     <Folder Include="Extensions\" />
     <Folder Include="Swagger\Filters\" />
   </ItemGroup>

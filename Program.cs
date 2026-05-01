@@ -14,6 +14,27 @@ using user_service.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Map common Azure App Service environment variables into configuration keys
+// so they bind to options and ConnectionStrings correctly.
+// This keeps support for both Azure-style VARIABLE_NAMES and .NET config keys (Section:Key).
+void MapEnvToConfig(string envName, string configKey)
+{
+    var val = Environment.GetEnvironmentVariable(envName);
+    if (!string.IsNullOrEmpty(val))
+        builder.Configuration[configKey] = val;
+}
+
+MapEnvToConfig("SENDGRID_API_KEY", "SendGrid:ApiKey");
+MapEnvToConfig("SENDGRID_FROM_EMAIL", "SendGrid:FromEmail");
+MapEnvToConfig("SENDGRID_FROM_NAME", "SendGrid:FromName");
+MapEnvToConfig("JWT_KEY", "Jwt:Key");
+MapEnvToConfig("ConnectionStrings__DefaultConnection", "ConnectionStrings:DefaultConnection");
+MapEnvToConfig("APPLICATIONINSIGHTS_CONNECTION_STRING", "ApplicationInsights:ConnectionString");
+
+// Keep common port environment mappings
+MapEnvToConfig("WEBSITES_PORT", "ASPNETCORE_URLS");
+MapEnvToConfig("PORT", "ASPNETCORE_URLS");
+
 var rawPort = Environment.GetEnvironmentVariable("PORT")
     ?? Environment.GetEnvironmentVariable("WEBSITES_PORT");
 
@@ -27,14 +48,17 @@ if (int.TryParse(rawPort, out var port) && port > 0)
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNamingPolicy =
+            System.Text.Json.JsonNamingPolicy.CamelCase;
     });
+
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(options =>
 {
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+
     if (File.Exists(xmlPath))
     {
         options.IncludeXmlComments(xmlPath);
@@ -45,6 +69,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         if (api.RelativePath?.StartsWith("api/internal") == true)
             return false;
+
         return true;
     });
 });
@@ -59,66 +84,108 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
-builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
-builder.Services.Configure<SendGridOptions>(builder.Configuration.GetSection(SendGridOptions.SectionName));
+builder.Services.Configure<JwtOptions>(
+    builder.Configuration.GetSection(JwtOptions.SectionName));
 
-var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-var sendGridOptions = builder.Configuration.GetSection(SendGridOptions.SectionName).Get<SendGridOptions>() ?? new SendGridOptions();
+builder.Services.Configure<SendGridOptions>(
+    builder.Configuration.GetSection(SendGridOptions.SectionName));
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+var jwtOptions =
+    builder.Configuration.GetSection(JwtOptions.SectionName)
+        .Get<JwtOptions>() ?? new JwtOptions();
+
+var sendGridOptions =
+    builder.Configuration.GetSection(SendGridOptions.SectionName)
+        .Get<SendGridOptions>() ?? new SendGridOptions();
+
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection")
     ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 
-if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(connectionString) ||
+    connectionString.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured. Set it in User Secrets or environment variables.");
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' is not configured. " +
+        "Set it in User Secrets or Azure App Service environment variables.");
 }
 
-jwtOptions.Key = string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
-    ? Environment.GetEnvironmentVariable("JWT_KEY") ?? jwtOptions.Key
-    : jwtOptions.Key;
+jwtOptions.Key =
+    string.IsNullOrWhiteSpace(jwtOptions.Key) ||
+    jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase)
+        ? Environment.GetEnvironmentVariable("JWT_KEY") ?? jwtOptions.Key
+        : jwtOptions.Key;
 
-if (string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(jwtOptions.Key) ||
+    jwtOptions.Key.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("JWT key is not configured. Set 'Jwt:Key' in User Secrets or JWT_KEY in environment variables.");
+    throw new InvalidOperationException(
+        "JWT key is not configured. " +
+        "Set 'Jwt:Key' or JWT_KEY environment variable.");
 }
 
-sendGridOptions.ApiKey = string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) || sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
-    ? Environment.GetEnvironmentVariable("SENDGRID_API_KEY") ?? sendGridOptions.ApiKey
-    : sendGridOptions.ApiKey;
+sendGridOptions.ApiKey =
+    string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) ||
+    sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase)
+        ? Environment.GetEnvironmentVariable("SENDGRID_API_KEY")
+            ?? sendGridOptions.ApiKey
+        : sendGridOptions.ApiKey;
 
-sendGridOptions.FromEmail = string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) || sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase)
-    ? Environment.GetEnvironmentVariable("SENDGRID_FROM_EMAIL") ?? sendGridOptions.FromEmail
-    : sendGridOptions.FromEmail;
+sendGridOptions.FromEmail =
+    string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) ||
+    sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase)
+        ? Environment.GetEnvironmentVariable("SENDGRID_FROM_EMAIL")
+            ?? sendGridOptions.FromEmail
+        : sendGridOptions.FromEmail;
 
-if (string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) || sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(sendGridOptions.ApiKey) ||
+    sendGridOptions.ApiKey.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("SendGrid API key is not configured. Set 'SendGrid:ApiKey' or SENDGRID_API_KEY.");
+    throw new InvalidOperationException(
+        "SendGrid API key is not configured. " +
+        "Set 'SendGrid:ApiKey' or SENDGRID_API_KEY environment variable.");
 }
 
-if (string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) || sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(sendGridOptions.FromEmail) ||
+    sendGridOptions.FromEmail.Contains("__SET_IN_USER_SECRETS__",
+        StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException("SendGrid sender email is not configured. Set 'SendGrid:FromEmail' or SENDGRID_FROM_EMAIL.");
+    throw new InvalidOperationException(
+        "SendGrid sender email is not configured. " +
+        "Set 'SendGrid:FromEmail' or SENDGRID_FROM_EMAIL environment variable.");
 }
 
-var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key));
+var signingKey =
+    new SymmetricSecurityKey(
+        Encoding.UTF8.GetBytes(jwtOptions.Key));
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateIssuerSigningKey = true,
-            ValidateLifetime = true,
-            ValidIssuer = jwtOptions.Issuer,
-            ValidAudience = jwtOptions.Audience,
-            IssuerSigningKey = signingKey,
-            RoleClaimType = ClaimTypes.Role,
-            NameClaimType = ClaimTypes.NameIdentifier,
-            ClockSkew = TimeSpan.Zero
-        };
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateIssuerSigningKey = true,
+                ValidateLifetime = true,
+
+                ValidIssuer = jwtOptions.Issuer,
+                ValidAudience = jwtOptions.Audience,
+                IssuerSigningKey = signingKey,
+
+                RoleClaimType = ClaimTypes.Role,
+                NameClaimType = ClaimTypes.NameIdentifier,
+
+                ClockSkew = TimeSpan.Zero
+            };
     });
 
 builder.Services.AddAuthorization();
@@ -139,25 +206,41 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<UserServiceDbContext>();
+    var db = scope.ServiceProvider
+        .GetRequiredService<UserServiceDbContext>();
+
     db.Database.Migrate();
 }
 
-var enableSwagger = app.Environment.IsDevelopment() ||
-                    string.Equals(Environment.GetEnvironmentVariable("ENABLE_SWAGGER"), "true", StringComparison.OrdinalIgnoreCase);
+var enableSwagger =
+    app.Environment.IsDevelopment() ||
+    string.Equals(
+        Environment.GetEnvironmentVariable("ENABLE_SWAGGER"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
 
 if (enableSwagger)
 {
     app.MapOpenApi();
+
     app.UseSwagger();
+
     app.UseSwaggerUI(options =>
     {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "User Service API v1");
+        options.SwaggerEndpoint(
+            "/swagger/v1/swagger.json",
+            "User Service API v1");
+
         options.RoutePrefix = "swagger";
     });
 }
 
-var runningInContainer = string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
+var runningInContainer =
+    string.Equals(
+        Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+
 if (!runningInContainer)
 {
     app.UseHttpsRedirection();
@@ -168,13 +251,22 @@ app.UseCors("SwaggerAndLocal");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Ok(new { status = "ok", service = "user-service" }))
+app.MapGet("/", () =>
+        Results.Ok(new
+        {
+            status = "ok",
+            service = "user-service"
+        }))
     .WithName("Health")
     .WithOpenApi()
     .Produces(200)
     .ExcludeFromDescription();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+app.MapGet("/health", () =>
+        Results.Ok(new
+        {
+            status = "healthy"
+        }))
     .WithName("HealthCheck")
     .WithOpenApi()
     .Produces(200)

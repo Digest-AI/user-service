@@ -15,29 +15,56 @@ public sealed class SendGridVerificationEmailSender(IOptions<SendGridOptions> op
 
     public async Task SendCodeAsync(string toEmail, string code, VerificationCodePurpose purpose, CancellationToken cancellationToken = default)
     {
-        var client = new SendGridClient(_options.ApiKey);
-        var from = new EmailAddress(_options.FromEmail, _options.FromName ?? "Digest.AI");
+        // Validate inputs
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            _logger.LogError("Cannot send verification code: recipient email is empty");
+            throw new ArgumentException("Recipient email cannot be empty", nameof(toEmail));
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            _logger.LogError("Cannot send verification code: code is empty");
+            throw new ArgumentException("Verification code cannot be empty", nameof(code));
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            _logger.LogError("Cannot send verification code: SendGrid API key is not configured");
+            throw new InvalidOperationException("SendGrid API key is not configured");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.FromEmail))
+        {
+            _logger.LogError("Cannot send verification code: SendGrid FromEmail is not configured");
+            throw new InvalidOperationException("SendGrid FromEmail is not configured");
+        }
+
         var subject = purpose switch
         {
-            VerificationCodePurpose.EMAIL => "Email verification code",
-            VerificationCodePurpose.BACKUP_EMAIL => "Backup email verification code",
-            VerificationCodePurpose.PASSWORD => "Password verification code",
-            _ => "Verification code"
+            VerificationCodePurpose.EMAIL => "Email Verification Code",
+            VerificationCodePurpose.PASSWORD => "Password Reset Code",
+            VerificationCodePurpose.BACKUP_EMAIL => "Backup Email Verification Code",
+            _ => "Verification Code"
         };
 
+        var htmlContent = BuildHtmlEmail(code, subject);
+        var textContent = BuildTextEmail(code, subject);
+
         _logger.LogInformation(
-            "Sending SendGrid email verification message. To={ToEmail}, Purpose={Purpose}, From={FromEmail}, Subject={Subject}",
+            "Sending SendGrid email verification. To={ToEmail}, Purpose={Purpose}, From={FromEmail}",
             toEmail,
             purpose,
-            _options.FromEmail,
-            subject);
+            _options.FromEmail);
 
+        var client = new SendGridClient(_options.ApiKey);
+        var from = new EmailAddress(_options.FromEmail, _options.FromName ?? "Digest.AI");
         var message = MailHelper.CreateSingleEmail(
             from,
             new EmailAddress(toEmail),
             subject,
-            $"Your verification code is: {code}",
-            $"Your verification code is: {code}");
+            textContent,
+            htmlContent);
 
         try
         {
@@ -47,12 +74,12 @@ public sealed class SendGridVerificationEmailSender(IOptions<SendGridOptions> op
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError(
-                    "SendGrid returned non-success response. To={ToEmail}, Purpose={Purpose}, StatusCode={StatusCode}, Body={Body}",
+                    "SendGrid email failed. To={ToEmail}, Purpose={Purpose}, StatusCode={StatusCode}, Response={Response}",
                     toEmail,
                     purpose,
                     response.StatusCode,
                     body);
-                return;
+                throw new InvalidOperationException($"SendGrid returned status code {response.StatusCode}: {body}");
             }
 
             _logger.LogInformation(
@@ -61,9 +88,9 @@ public sealed class SendGridVerificationEmailSender(IOptions<SendGridOptions> op
                 purpose,
                 response.StatusCode);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            _logger.LogWarning(
+            _logger.LogWarning(ex,
                 "SendGrid email send was cancelled. To={ToEmail}, Purpose={Purpose}",
                 toEmail,
                 purpose);
@@ -71,13 +98,64 @@ public sealed class SendGridVerificationEmailSender(IOptions<SendGridOptions> op
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "SendGrid email send failed. To={ToEmail}, Purpose={Purpose}, From={FromEmail}",
+            _logger.LogError(ex,
+                "SendGrid email send failed with exception. To={ToEmail}, Purpose={Purpose}, From={FromEmail}",
                 toEmail,
                 purpose,
                 _options.FromEmail);
             throw;
         }
+    }
+
+    private static string BuildTextEmail(string code, string subject)
+    {
+        return $@"{subject}
+
+Your verification code is: {code}
+
+This code will expire in 15 minutes.
+Do not share this code with anyone.
+
+If you did not request this verification, please ignore this email.";
+    }
+
+    private static string BuildHtmlEmail(string code, string subject)
+    {
+        return $@"<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: #007bff; color: white; padding: 20px; border-radius: 5px 5px 0 0; text-align: center; }}
+        .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }}
+        .code-box {{ background-color: #e8f4f8; border: 2px solid #007bff; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0; }}
+        .code {{ font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #007bff; font-family: monospace; }}
+        .footer {{ margin-top: 20px; font-size: 12px; color: #666; text-align: center; }}
+        .warning {{ color: #dc3545; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <div class=""container"">
+        <div class=""header"">
+            <h1>{subject}</h1>
+        </div>
+        <div class=""content"">
+            <p>Hello,</p>
+            <p>You requested a verification code to secure your Digest.AI account. Here is your code:</p>
+            <div class=""code-box"">
+                <div class=""code"">{code}</div>
+            </div>
+            <p><strong>This code will expire in 15 minutes.</strong></p>
+            <p class=""warning"">⚠️ Do not share this code with anyone. Digest.AI support staff will never ask for this code.</p>
+            <p>If you did not request this verification, please ignore this email or contact our support team.</p>
+            <div class=""footer"">
+                <p>This is an automated message, please do not reply to this email.</p>
+                <p>&copy; 2024 Digest.AI. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>";
     }
 }
