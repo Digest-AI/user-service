@@ -182,6 +182,17 @@ public sealed class UserController(IUserService userService) : ControllerBase
         return ok ? NoContent() : BadRequest(new ErrorResponse { Code = 400, Detail = ErrorCodes.InvalidCode, Attr = "code" });
     }
 
+    /// <summary>Soft deletes the current user's account.</summary>
+    [HttpDelete("me")]
+    public async Task<IActionResult> DeleteMe(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        var ok = await userService.DeactivateAsync(userId.Value, cancellationToken);
+        return ok ? NoContent() : NotFound();
+    }
+
     private Guid? GetUserId()
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);

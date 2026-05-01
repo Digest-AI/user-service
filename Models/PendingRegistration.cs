@@ -8,4 +8,5 @@ public sealed class PendingRegistration
     public required string Code { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool RememberMe { get; set; }
 }

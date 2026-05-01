@@ -1,5 +1,6 @@
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 using user_service.Data;
 using user_service.DTOs.Auth;
 using user_service.Interfaces;
@@ -14,7 +15,7 @@ public sealed class AuthService(
     IVerificationCodeService verificationCodeService,
     IVerificationEmailSender emailSender) : IAuthService
 {
-    public async Task<RegistrationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
+    public async Task<VerificationInitiationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
         UserInputValidation.ValidatePassword(request.Password);
@@ -34,7 +35,8 @@ public sealed class AuthService(
                 Email = normalizedEmail,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 Code = code,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+                RememberMe = request.RememberMe
             };
             await dbContext.PendingRegistrations.AddAsync(pending, cancellationToken);
         }
@@ -43,21 +45,27 @@ public sealed class AuthService(
             pending.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
             pending.Code = code;
             pending.ExpiresAt = DateTime.UtcNow.AddMinutes(15);
+            pending.RememberMe = request.RememberMe;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await emailSender.SendCodeAsync(pending.Email, pending.Code, VerificationCodePurpose.EMAIL, cancellationToken);
 
-        return new RegistrationResponse
+        return new VerificationInitiationResponse
         {
             PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
+<<<<<<< Updated upstream
             Message = "Verification code sent."
+=======
+            Purpose = "verify_email",
+            Message = "Verification code sent. Confirm registration to create the account."
+>>>>>>> Stashed changes
         };
     }
 
-    public async Task<RegistrationResponse?> ResendRegistrationCodeAsync(ResendRegistrationCodeRequest request, CancellationToken cancellationToken = default)
+    public async Task<VerificationInitiationResponse?> ResendRegistrationCodeAsync(ResendRegistrationCodeRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
         var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
@@ -77,16 +85,17 @@ public sealed class AuthService(
 
         await emailSender.SendCodeAsync(pending.Email, pending.Code, VerificationCodePurpose.EMAIL, cancellationToken);
 
-        return new RegistrationResponse
+        return new VerificationInitiationResponse
         {
             PublicId = pending.Id,
             Email = pending.Email,
             VerificationCodeExpiresAt = pending.ExpiresAt,
+            Purpose = "verify_email",
             Message = "Verification code resent."
         };
     }
 
-    public async Task<AuthUserDto?> ConfirmRegistrationAsync(ConfirmRegistrationRequest request, CancellationToken cancellationToken = default)
+    public async Task<AuthSuccessResponse?> ConfirmRegistrationAsync(ConfirmRegistrationRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
         var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(
@@ -126,14 +135,114 @@ public sealed class AuthService(
             IsDeleted = false
         });
 
+        var chain = new Chain
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            RememberMe = pending.RememberMe
+        };
+
+        dbContext.Chains.Add(chain);
         dbContext.PendingRegistrations.Remove(pending);
         await dbContext.Users.AddAsync(user, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return await BuildAuthUserDtoAsync(user.Id, cancellationToken);
+        var roles = new[] { "USER" };
+        var (accessToken, accessExpiresAt) = jwtTokenService.CreateAccessToken(user, roles);
+        var (rawRefreshToken, refreshTokenHash, refreshExpiresAt) = jwtTokenService.CreateRefreshToken(pending.RememberMe);
+
+        dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            ChainId = chain.Id,
+            TokenHash = refreshTokenHash,
+            ExpiresAt = refreshExpiresAt,
+            CreatedAt = DateTime.UtcNow,
+            Revoked = false,
+            IsDeleted = false,
+            RememberMe = pending.RememberMe
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new AuthSuccessResponse
+        {
+            PublicId = user.PublicId,
+            AccessToken = accessToken,
+            RefreshToken = rawRefreshToken,
+            AccessTokenExpiresAt = accessExpiresAt,
+            RefreshTokenExpiresAt = refreshExpiresAt,
+            RememberMe = pending.RememberMe
+        };
     }
 
-    public async Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
+    public async Task<VerificationCodeResponse> RestorePasswordAsync(RestorePasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
+
+        if (user is null)
+        {
+            throw new InvalidOperationException("User with this email not found.");
+        }
+
+        var code = await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.PASSWORD, cancellationToken);
+
+        return new VerificationCodeResponse
+        {
+            Email = user.Email,
+            VerificationCodeExpiresAt = code.ExpiresAt,
+            Purpose = "restore_password",
+            Message = "Verification code sent. Use it to restore your password."
+        };
+    }
+
+    public async Task<VerificationCodeResponse?> ResendRestorePasswordCodeAsync(ResendRestorePasswordCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
+
+        if (user is null)
+        {
+            return null;
+        }
+
+        var code = await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.PASSWORD, cancellationToken);
+
+        return new VerificationCodeResponse
+        {
+            Email = user.Email,
+            VerificationCodeExpiresAt = code.ExpiresAt,
+            Purpose = "restore_password",
+            Message = "Verification code resent."
+        };
+    }
+
+    public async Task<bool> ConfirmRestorePasswordAsync(ConfirmRestorePasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        UserInputValidation.ValidatePassword(request.NewPassword);
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var consumed = await verificationCodeService.ConsumeCodeAsync(user.Id, request.Code, VerificationCodePurpose.PASSWORD, cancellationToken);
+        if (!consumed)
+        {
+            return false;
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.IsVerified = true;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
 
@@ -151,6 +260,23 @@ public sealed class AuthService(
         if (!passwordValid)
         {
             return null;
+        }
+
+        // Если пользователь не верифицирован, отправляем код подтверждения
+        if (!user.IsVerified)
+        {
+            var code = await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.EMAIL, cancellationToken);
+            return new LoginResponse
+            {
+                IsVerified = false,
+                VerificationRequired = new VerificationRequiredResponse
+                {
+                    Email = user.Email,
+                    VerificationCodeExpiresAt = code.ExpiresAt,
+                    Purpose = "verify_email",
+                    Message = "Email verification required. Please check your email for the verification code."
+                }
+            };
         }
 
         var chain = new Chain
@@ -181,20 +307,22 @@ public sealed class AuthService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.EMAIL, cancellationToken);
-
-        return new AuthResponse
+        return new LoginResponse
         {
-            PublicId = user.PublicId,
-            ChainId = chain.Id,
-            AccessToken = accessToken,
-            RefreshToken = rawRefreshToken,
-            AccessTokenExpiresAt = accessExpiresAt,
-            RefreshTokenExpiresAt = refreshExpiresAt
+            IsVerified = true,
+            AuthSuccess = new AuthSuccessResponse
+            {
+                PublicId = user.PublicId,
+                AccessToken = accessToken,
+                RefreshToken = rawRefreshToken,
+                AccessTokenExpiresAt = accessExpiresAt,
+                RefreshTokenExpiresAt = refreshExpiresAt,
+                RememberMe = request.RememberMe
+            }
         };
     }
 
-    public async Task<AuthResponse?> RefreshAsync(RefreshRequest request, CancellationToken cancellationToken = default)
+    public async Task<AuthSuccessResponse?> RefreshAsync(RefreshRequest request, CancellationToken cancellationToken = default)
     {
         var refreshTokenHash = jwtTokenService.ComputeRefreshTokenHash(request.RefreshToken);
 
@@ -240,26 +368,31 @@ public sealed class AuthService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new AuthResponse
+        return new AuthSuccessResponse
         {
             PublicId = user.PublicId,
-            ChainId = refreshToken.ChainId,
             AccessToken = accessToken,
             RefreshToken = rawRefreshToken,
             AccessTokenExpiresAt = accessExpiresAt,
-            RefreshTokenExpiresAt = refreshExpiresAt
+            RefreshTokenExpiresAt = refreshExpiresAt,
+            RememberMe = refreshToken.RememberMe
         };
     }
 
     public async Task<bool> LogoutAsync(Guid userId, string refreshToken, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return true;
+        }
+
         var hash = jwtTokenService.ComputeRefreshTokenHash(refreshToken);
         var token = await dbContext.RefreshTokens
             .SingleOrDefaultAsync(x => x.UserId == userId && x.TokenHash == hash, cancellationToken);
 
         if (token is null)
         {
-            return false;
+            return true;
         }
 
         token.Revoked = true;
@@ -272,13 +405,18 @@ public sealed class AuthService(
 
     public async Task<bool> LogoutAllDevicesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
-        if (user is null)
+        var refreshTokens = await dbContext.RefreshTokens
+            .Where(x => x.UserId == userId && !x.IsDeleted)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in refreshTokens)
         {
-            return false;
+            token.Revoked = true;
+            token.RevokedAt = DateTime.UtcNow;
+            token.IsDeleted = true;
+            token.DeletedAt = DateTime.UtcNow;
         }
 
-        user.DateDeleted = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }

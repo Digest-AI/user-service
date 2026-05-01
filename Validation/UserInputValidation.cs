@@ -109,6 +109,7 @@ public static class UserInputValidation
         return normalized;
     }
 
+<<<<<<< Updated upstream
     public static string ValidateCode(string code)
     {
         if (string.IsNullOrWhiteSpace(code))
@@ -134,5 +135,25 @@ public static class UserInputValidation
         }
 
         return normalizedNew;
+=======
+    public static string ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("Password is required.");
+        }
+
+        if (password.Length < 8)
+        {
+            throw new InvalidOperationException("Password must be at least 8 characters long.");
+        }
+
+        if (!password.Any(char.IsDigit))
+        {
+            throw new InvalidOperationException("Password must contain at least one digit.");
+        }
+
+        return password;
+>>>>>>> Stashed changes
     }
 }

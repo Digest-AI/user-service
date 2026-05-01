@@ -17,26 +17,33 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
         return await dbContext.Users
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
-            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+            .SingleOrDefaultAsync(x => x.Id == userId && !x.IsDeleted, cancellationToken);
     }
 
     public async Task<User?> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Users.SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        return await dbContext.Users
+            .SingleOrDefaultAsync(x => x.Id == userId && !x.IsDeleted, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<User>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
         return await dbContext.Users
+            .Where(x => !x.IsDeleted)
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
             .OrderByDescending(x => x.DateJoined)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> EmailExistsAsync(string email, Guid? excludeUserId = null, CancellationToken cancellationToken = default)
+    public async Task<bool> EmailExistsAsync(
+        string email,
+        Guid? excludeUserId = null,
+        CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Users.Where(x => x.Email == email);
+        var query = dbContext.Users
+            .Where(x => x.Email == email && !x.IsDeleted);
+
         if (excludeUserId.HasValue)
         {
             query = query.Where(x => x.Id != excludeUserId.Value);
@@ -45,12 +52,17 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
         return await query.AnyAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<RefreshToken>> GetSessionsAsync(Guid userId, bool includeDeleted = false, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<RefreshToken>> GetSessionsAsync(
+        Guid userId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
     {
-        var query = dbContext.RefreshTokens.Where(x => x.UserId == userId);
-        if (includeDeleted)
+        var query = dbContext.RefreshTokens
+            .Where(x => x.UserId == userId);
+
+        if (!includeDeleted)
         {
-            query = query.IgnoreQueryFilters();
+            query = query.Where(x => !x.IsDeleted);
         }
 
         return await query
@@ -58,12 +70,18 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<RefreshToken?> GetSessionAsync(Guid userId, Guid sessionId, bool includeDeleted = false, CancellationToken cancellationToken = default)
+    public async Task<RefreshToken?> GetSessionAsync(
+        Guid userId,
+        Guid sessionId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
     {
-        var query = dbContext.RefreshTokens.Where(x => x.UserId == userId && x.Id == sessionId);
-        if (includeDeleted)
+        var query = dbContext.RefreshTokens
+            .Where(x => x.UserId == userId && x.Id == sessionId);
+
+        if (!includeDeleted)
         {
-            query = query.IgnoreQueryFilters();
+            query = query.Where(x => !x.IsDeleted);
         }
 
         return await query.SingleOrDefaultAsync(cancellationToken);
@@ -71,31 +89,45 @@ public sealed class UserRepository(UserServiceDbContext dbContext) : IUserReposi
 
     public async Task<IReadOnlyCollection<Role>> GetRolesAsync(CancellationToken cancellationToken = default)
     {
-        return await dbContext.Roles.OrderBy(x => x.Name).ToListAsync(cancellationToken);
+        return await dbContext.Roles
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<Role?> GetRoleByIdAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Roles.SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken);
+        return await dbContext.Roles
+            .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<UserRole>> GetUserRoleLinksAsync(Guid userId, bool includeDeleted = false, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<UserRole>> GetUserRoleLinksAsync(
+        Guid userId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
     {
-        var query = dbContext.UserRoles.Where(x => x.UserId == userId);
-        if (includeDeleted)
+        var query = dbContext.UserRoles
+            .Where(x => x.UserId == userId);
+
+        if (!includeDeleted)
         {
-            query = query.IgnoreQueryFilters();
+            query = query.Where(x => !x.IsDeleted);
         }
 
         return await query.ToListAsync(cancellationToken);
     }
 
-    public async Task<UserRole?> GetUserRoleLinkAsync(Guid userId, Guid roleId, bool includeDeleted = false, CancellationToken cancellationToken = default)
+    public async Task<UserRole?> GetUserRoleLinkAsync(
+        Guid userId,
+        Guid roleId,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
     {
-        var query = dbContext.UserRoles.Where(x => x.UserId == userId && x.RoleId == roleId);
-        if (includeDeleted)
+        var query = dbContext.UserRoles
+            .Where(x => x.UserId == userId && x.RoleId == roleId);
+
+        if (!includeDeleted)
         {
-            query = query.IgnoreQueryFilters();
+            query = query.Where(x => !x.IsDeleted);
         }
 
         return await query.SingleOrDefaultAsync(cancellationToken);
