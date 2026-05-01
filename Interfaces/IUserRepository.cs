@@ -7,6 +7,7 @@ public interface IUserRepository
     Task AddUserAsync(User user, CancellationToken cancellationToken = default);
     Task<User?> GetUserWithRolesAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<User?> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<User?> GetUserByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<User>> GetUsersAsync(CancellationToken cancellationToken = default);
     Task<bool> EmailExistsAsync(string email, Guid? excludeUserId = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<RefreshToken>> GetSessionsAsync(Guid userId, bool includeDeleted = false, CancellationToken cancellationToken = default);

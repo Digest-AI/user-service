@@ -5,7 +5,9 @@ namespace user_service.Interfaces;
 public interface IUserService
 {
     Task<UserProfileDto?> GetMeAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<UserProfileDto?> GetMeByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default);
     Task<UserProfileDto?> UpdateMeAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken = default);
+    Task<UserProfileDto?> UpdateMeByPublicIdAsync(Guid publicId, UpdateProfileRequest request, CancellationToken cancellationToken = default);
     Task<bool> RequestEmailChangeAsync(Guid userId, RequestEmailChangeRequest request, CancellationToken cancellationToken = default);
     Task<bool> ConfirmEmailChangeAsync(Guid userId, ConfirmEmailChangeRequest request, CancellationToken cancellationToken = default);
     Task<bool> RequestPasswordChangeAsync(Guid userId, RequestPasswordChangeRequest request, CancellationToken cancellationToken = default);
