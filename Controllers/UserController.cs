@@ -36,6 +36,13 @@ public sealed class UserController(IUserService userService) : ControllerBase
         if (userId is null) return Unauthorized(new ErrorResponse { Code = 401, Detail = "invalid_token" });
 
         var profile = await userService.GetMeAsync(userId.Value, cancellationToken);
+        
+        // If not found by internal ID, try by PublicId (for tokens that contain PublicId in NameIdentifier)
+        if (profile is null)
+        {
+            profile = await userService.GetMeByPublicIdAsync(userId.Value, cancellationToken);
+        }
+
         return profile is null ? NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound }) : Ok(profile);
     }
 
@@ -63,6 +70,13 @@ public sealed class UserController(IUserService userService) : ControllerBase
         if (userId is null) return Unauthorized(new ErrorResponse { Code = 401, Detail = "invalid_token" });
 
         var profile = await userService.UpdateMeAsync(userId.Value, request, cancellationToken);
+        
+        // If not found by internal ID, try by PublicId (for tokens that contain PublicId in NameIdentifier)
+        if (profile is null)
+        {
+            profile = await userService.UpdateMeByPublicIdAsync(userId.Value, request, cancellationToken);
+        }
+
         return profile is null ? NotFound(new ErrorResponse { Code = 404, Detail = ErrorCodes.EmailNotFound }) : Ok(profile);
     }
 
