@@ -1,5 +1,6 @@
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq;
 using user_service.Data;
 using user_service.DTOs.Auth;
@@ -13,7 +14,8 @@ public sealed class AuthService(
     UserServiceDbContext dbContext,
     IJwtTokenService jwtTokenService,
     IVerificationCodeService verificationCodeService,
-    IVerificationEmailSender emailSender) : IAuthService
+    IVerificationEmailSender emailSender,
+    ILogger<AuthService> logger) : IAuthService
 {
     public async Task<VerificationInitiationResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
@@ -92,19 +94,25 @@ public sealed class AuthService(
     public async Task<AuthSuccessResponse?> ConfirmRegistrationAsync(ConfirmRegistrationRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        logger.LogInformation("Confirming registration for email: {Email}", normalizedEmail);
+        
         var pending = await dbContext.PendingRegistrations.SingleOrDefaultAsync(
             x => x.Email == normalizedEmail && x.Code == request.Code && x.ExpiresAt > DateTime.UtcNow,
             cancellationToken);
 
         if (pending is null)
         {
+            logger.LogWarning("Pending registration not found or code expired for email: {Email}", normalizedEmail);
             return null;
         }
 
         if (await dbContext.Users.AnyAsync(x => x.Email == normalizedEmail, cancellationToken))
         {
+            logger.LogWarning("Email already exists: {Email}", normalizedEmail);
             throw new InvalidOperationException("Email already exists.");
         }
+
+        logger.LogInformation("Creating new user account for email: {Email}", normalizedEmail);
 
         var user = new User
         {
@@ -121,13 +129,21 @@ public sealed class AuthService(
             IsDeleted = false
         };
 
-        var defaultRole = await dbContext.Roles.SingleAsync(x => x.Name == "USER", cancellationToken);
+        var defaultRole = await dbContext.Roles.SingleOrDefaultAsync(x => x.Name == "USER", cancellationToken);
+        if (defaultRole is null)
+        {
+            logger.LogError("Default USER role not found in database");
+            throw new InvalidOperationException("Default USER role not found in database.");
+        }
+
         user.UserRoles.Add(new UserRole
         {
             UserId = user.Id,
             RoleId = defaultRole.Id,
             IsDeleted = false
         });
+
+        logger.LogInformation("Added USER role to new user: {Email}", normalizedEmail);
 
         var chain = new Chain
         {
@@ -140,6 +156,8 @@ public sealed class AuthService(
         dbContext.PendingRegistrations.Remove(pending);
         await dbContext.Users.AddAsync(user, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("User saved to database: {Email}, UserId: {UserId}, IsVerified: {IsVerified}", normalizedEmail, user.Id, user.IsVerified);
 
         var roles = new[] { "USER" };
         var (accessToken, accessExpiresAt) = jwtTokenService.CreateAccessToken(user, roles);
@@ -159,6 +177,8 @@ public sealed class AuthService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Registration confirmed successfully for email: {Email}", normalizedEmail);
 
         return new AuthSuccessResponse
         {
@@ -239,26 +259,38 @@ public sealed class AuthService(
     public async Task<object?> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = UserInputValidation.NormalizeEmail(request.Email);
+        logger.LogInformation("Login attempt for email: {Email}", normalizedEmail);
 
         var user = await dbContext.Users
             .Include(x => x.UserRoles)
             .ThenInclude(x => x.Role)
             .SingleOrDefaultAsync(x => x.Email == normalizedEmail, cancellationToken);
 
-        if (user is null || user.IsDeleted)
+        if (user is null)
         {
+            logger.LogWarning("User not found for email: {Email}", normalizedEmail);
+            return null;
+        }
+
+        if (user.IsDeleted)
+        {
+            logger.LogWarning("User is deleted: {Email}", normalizedEmail);
             return null;
         }
 
         var passwordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
         if (!passwordValid)
         {
+            logger.LogWarning("Invalid password for user: {Email}", normalizedEmail);
             return null;
         }
+
+        logger.LogInformation("Password verified for user: {Email}, IsVerified: {IsVerified}", normalizedEmail, user.IsVerified);
 
         // Если пользователь не верифицирован, отправляем код подтверждения
         if (!user.IsVerified)
         {
+            logger.LogInformation("User not verified, sending verification code: {Email}", normalizedEmail);
             var code = await verificationCodeService.CreateCodeAsync(user.Id, user.Email, VerificationCodePurpose.EMAIL, cancellationToken);
             return new LoginVerificationRequiredResponse
             {
@@ -275,7 +307,17 @@ public sealed class AuthService(
 
         dbContext.Chains.Add(chain);
 
-        var roles = user.UserRoles.Select(x => x.Role.Name).ToArray();
+        var roles = user.UserRoles
+            .Where(ur => ur.Role != null && !ur.IsDeleted)
+            .Select(x => x.Role!.Name)
+            .ToArray();
+        
+        // Если ролей нет (ошибка загрузки), даём роль USER по умолчанию
+        if (roles.Length == 0)
+        {
+            roles = new[] { "USER" };
+        }
+        
         var (accessToken, accessExpiresAt) = jwtTokenService.CreateAccessToken(user, roles);
         var (rawRefreshToken, refreshTokenHash, refreshExpiresAt) = jwtTokenService.CreateRefreshToken(request.RememberMe);
 
@@ -332,7 +374,17 @@ public sealed class AuthService(
         refreshToken.IsDeleted = true;
         refreshToken.DeletedAt = DateTime.UtcNow;
 
-        var roles = user.UserRoles.Select(x => x.Role.Name).ToArray();
+        var roles = user.UserRoles
+            .Where(ur => ur.Role != null && !ur.IsDeleted)
+            .Select(x => x.Role!.Name)
+            .ToArray();
+        
+        // Если ролей нет (ошибка загрузки), даём роль USER по умолчанию
+        if (roles.Length == 0)
+        {
+            roles = new[] { "USER" };
+        }
+        
         var (accessToken, accessExpiresAt) = jwtTokenService.CreateAccessToken(user, roles);
         var (rawRefreshToken, newRefreshHash, refreshExpiresAt) = jwtTokenService.CreateRefreshToken(refreshToken.RememberMe);
 

@@ -156,6 +156,10 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
         {
             return Conflict(new AuthErrorResponse { Message = ex.Message });
         }
+        catch (Exception)
+        {
+            return BadRequest(new AuthErrorResponse { Message = "Invalid or expired verification code." });
+        }
     }
 
     /// <summary>
@@ -206,13 +210,20 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.LoginAsync(request, cancellationToken);
-        if (result is null)
+        try
+        {
+            var result = await authService.LoginAsync(request, cancellationToken);
+            if (result is null)
+            {
+                return Unauthorized(new AuthErrorResponse { Message = "Invalid credentials or inactive account." });
+            }
+
+            return Ok(result);
+        }
+        catch (Exception)
         {
             return Unauthorized(new AuthErrorResponse { Message = "Invalid credentials or inactive account." });
         }
-
-        return Ok(result);
     }
 
     /// <summary>
@@ -261,13 +272,20 @@ public sealed class AuthController(IAuthService authService, IVerificationCodeSe
     [ProducesResponseType(typeof(AuthErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken cancellationToken)
     {
-        var result = await authService.RefreshAsync(request, cancellationToken);
-        if (result is null)
+        try
+        {
+            var result = await authService.RefreshAsync(request, cancellationToken);
+            if (result is null)
+            {
+                return Unauthorized(new AuthErrorResponse { Message = "Invalid refresh token." });
+            }
+
+            return Ok(result);
+        }
+        catch (Exception)
         {
             return Unauthorized(new AuthErrorResponse { Message = "Invalid refresh token." });
         }
-
-        return Ok(result);
     }
 
     /// <summary>

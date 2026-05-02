@@ -221,7 +221,10 @@ public sealed class AdminService(IUserRepository userRepository, IVerificationCo
             DateJoined = user.DateJoined,
             DateDeleted = user.DateDeleted,
             IsDeleted = user.IsDeleted,
-            Roles = user.UserRoles.Select(x => x.Role.Name).ToArray()
+            Roles = user.UserRoles
+                .Where(ur => ur.Role != null && !ur.IsDeleted)
+                .Select(x => x.Role!.Name)
+                .ToArray()
         };
     }
 }
